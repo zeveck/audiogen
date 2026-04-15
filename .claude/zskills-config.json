@@ -1,0 +1,32 @@
+{
+  "$schema": "./zskills-config.schema.json",
+  "project_name": "audiogen",
+  "timezone": "America/New_York",
+  "execution": {
+    "landing": "cherry-pick",
+    "main_protected": false,
+    "branch_prefix": "feat/"
+  },
+  "testing": {
+    "unit_cmd": "",
+    "full_cmd": "bash scripts/test-all.sh",
+    "output_file": ".test-results.txt",
+    "file_patterns": []
+  },
+  "dev_server": {
+    "cmd": "",
+    "port_script": "scripts/port.sh",
+    "main_repo_path": "/workspaces/audiogen"
+  },
+  "ui": {
+    "file_patterns": "",
+    "auth_bypass": ""
+  },
+  "ci": {
+    "auto_fix": true,
+    "max_fix_attempts": 2
+  },
+  "agents": {
+    "min_model": "sonnet"
+  }
+}

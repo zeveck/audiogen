@@ -1,0 +1,129 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "zskills Configuration",
+  "description": "Configuration for zskills agent skill system. Controls execution modes, testing, CI, and UI verification.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path to this schema file (for VS Code validation)."
+    },
+    "project_name": {
+      "type": "string",
+      "description": "Human-readable project name. Used in PR titles and reports."
+    },
+    "timezone": {
+      "type": "string",
+      "description": "IANA timezone for timestamps in reports and markers. Example: America/New_York",
+      "default": "America/New_York"
+    },
+    "execution": {
+      "type": "object",
+      "description": "Controls how agent work reaches main.",
+      "properties": {
+        "landing": {
+          "type": "string",
+          "enum": ["cherry-pick", "pr", "direct"],
+          "default": "cherry-pick",
+          "description": "Default landing mode. cherry-pick: work in worktree, cherry-pick to main. pr: work in named worktree, push branch, create PR. direct: work on main, no landing step."
+        },
+        "main_protected": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, agents cannot commit, cherry-pick, or push to main. Forces PR or feature branch workflow."
+        },
+        "branch_prefix": {
+          "type": "string",
+          "default": "feat/",
+          "description": "Prefix for branch names in PR mode. Examples: 'feat/', 'agent/', '' (empty = no prefix)."
+        }
+      }
+    },
+    "testing": {
+      "type": "object",
+      "description": "Test commands and patterns.",
+      "properties": {
+        "unit_cmd": {
+          "type": "string",
+          "description": "Command to run unit tests. Example: npm run test"
+        },
+        "full_cmd": {
+          "type": "string",
+          "description": "Command to run all tests (unit + integration + E2E). Example: npm run test:all"
+        },
+        "output_file": {
+          "type": "string",
+          "default": ".test-results.txt",
+          "description": "File where test output is captured."
+        },
+        "file_patterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Glob patterns for test files. Example: ['tests/**/*.test.js']"
+        }
+      }
+    },
+    "dev_server": {
+      "type": "object",
+      "description": "Development server configuration for manual testing.",
+      "properties": {
+        "cmd": {
+          "type": "string",
+          "description": "Command to start the dev server. Example: npm start"
+        },
+        "port_script": {
+          "type": "string",
+          "description": "Script that outputs the dev server port. Example: scripts/port.sh"
+        },
+        "main_repo_path": {
+          "type": "string",
+          "description": "Absolute path to the main repo. Used by worktree agents to find the dev server."
+        }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "description": "UI verification configuration.",
+      "properties": {
+        "file_patterns": {
+          "type": "string",
+          "description": "Regex pattern matching UI files. When these files change, manual verification is required. Example: src/(components|ui)/.*\\.tsx?$"
+        },
+        "auth_bypass": {
+          "type": "string",
+          "description": "JavaScript to execute for auth bypass during manual testing. Example: localStorage.setItem('token', 'test')"
+        }
+      }
+    },
+    "ci": {
+      "type": "object",
+      "description": "CI integration for PR mode. Controls whether the agent polls CI checks and attempts to fix failures.",
+      "properties": {
+        "auto_fix": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true, poll CI checks after PR creation and attempt to fix failures. When false, create PR and report URL without waiting. Set to false for slow CI (30+ min) or repos without CI."
+        },
+        "max_fix_attempts": {
+          "type": "integer",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Maximum fix-and-push cycles when CI fails. 0 = poll and report only (no fix attempts). Each attempt comments on the PR with failure context."
+        }
+      }
+    },
+    "agents": {
+      "type": "object",
+      "description": "Agent dispatch configuration.",
+      "properties": {
+        "min_model": {
+          "type": "string",
+          "default": "auto",
+          "description": "Minimum model for subagent dispatch, enforced by the block-agents.sh hook. Accepts either a literal model string (e.g., 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5') or the sentinel 'auto' / 'inherit' which resolves at dispatch time to the current session's model (from the transcript). Recommended: 'auto' — your session's model becomes the floor automatically, so subagents can never silently downgrade. Ordinal comparison: haiku=1 < sonnet=2 < opus=3; unknown model families pass (future-proofing for new Claude releases).",
+          "examples": ["auto", "claude-opus-4-6", "claude-sonnet-4-6"]
+        }
+      }
+    }
+  }
+}
