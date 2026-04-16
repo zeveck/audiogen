@@ -1,12 +1,13 @@
 # Plan Report — /audiogen ElevenLabs Game-Audio Generation Skill
 
-## Phase — 1 Scaffold & shared core [UNFINALIZED]
+## Phase — 1 Scaffold & shared core
 
 **Plan:** plans/audiogen-skill.md
-**Status:** Completed (verified, pending cherry-pick)
-**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-1
-**Branch:** cp-audiogen-skill-1
+**Status:** Landed
+**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-1 (removed after land)
+**Branch:** cp-audiogen-skill-1 (deleted after land)
 **Commit (worktree):** 3c7265a
+**Commit (main):** ed606e8
 
 ### Work Items
 
