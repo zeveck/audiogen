@@ -1,5 +1,36 @@
 # Plan Report — /audiogen ElevenLabs Game-Audio Generation Skill
 
+## Phase — 5 SKILL.md + reference.md [UNFINALIZED]
+
+**Plan:** plans/audiogen-skill.md
+**Status:** Completed (verified, pending cherry-pick)
+**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-5
+**Branch:** cp-audiogen-skill-5
+**Commit (worktree):** b1e4db9
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | `SKILL.md` prose body (376 lines) — routing, music/voice/sfx/voices sections, key rules, edge cases, output org, history, cost guidance, licensing | Done | b1e4db9 |
+| 2 | `reference.md` preset library (614 lines) — 20 music presets, 15 voice archetypes, 7 SFX categories (26 entries), cost reference + pricing URL | Done | b1e4db9 |
+| 3 | `tests/build/skill-structure.test.js` extended — reference.md presence, section headers, preset counts, pricing URL, `{{}}`-free | Done | b1e4db9 |
+
+### Verification
+
+- Unit suite: **180 pass / 0 fail** (unchanged — no code changed)
+- Build suite: **12 pass / 0 fail** (up from 4 — 8 new subtests)
+- Full gate: exit 0 (test-all.sh still has Phase 6 TODOs — Phase 6 wires them)
+- File checks: all PASS
+  - SKILL.md frontmatter identical to Phase 1
+  - No `{{PLACEHOLDER}}` leakage
+  - WAV claims consistent with `generate.cjs` (music/sfx reject, voice allowed)
+  - Policy language: never-clone-public-figures, explicit-consent-for-real-people, music engine-side loop, SFX native loop via v2
+- reference.md coverage spot-check: 3/3 entries substantive (non-trivial prompts, voice settings, loop hints)
+- Verifier: fresh agent (sonnet)
+
+---
+
 ## Phase — 4 SFX generator
 
 **Plan:** plans/audiogen-skill.md
