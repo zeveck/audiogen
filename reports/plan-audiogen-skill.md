@@ -1,12 +1,13 @@
 # Plan Report — /audiogen ElevenLabs Game-Audio Generation Skill
 
-## Phase — 3 Voice generator + voices list [UNFINALIZED]
+## Phase — 3 Voice generator + voices list
 
 **Plan:** plans/audiogen-skill.md
-**Status:** Completed (verified, pending cherry-pick)
-**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-3
-**Branch:** cp-audiogen-skill-3
+**Status:** Landed
+**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-3 (removed after land)
+**Branch:** cp-audiogen-skill-3 (deleted after land)
 **Commit (worktree):** 1769160
+**Commit (main):** c25968e
 
 ### Work Items
 
