@@ -1,5 +1,36 @@
 # Plan Report — /audiogen ElevenLabs Game-Audio Generation Skill
 
+## Phase — 4 SFX generator [UNFINALIZED]
+
+**Plan:** plans/audiogen-skill.md
+**Status:** Completed (verified, pending cherry-pick)
+**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-4
+**Branch:** cp-audiogen-skill-4
+**Commit (worktree):** 30ef9a7
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | `runSFX` hits `POST /v1/sound-generation` with `responseType: 'binary'` | Done | 30ef9a7 |
+| 2 | `validateSFXOptions`: text required; `--duration` ∈ [0.5, 30] when passed; `--prompt-influence` ∈ [0, 1]; rejects `wav_*`; rejects `--loop` on non-v2 models | Done | 30ef9a7 |
+| 3 | `buildSFXRequest`: body omits `duration_seconds` when not passed; default `prompt_influence: 0.3`, default `model_id: 'eleven_text_to_sound_v2'` | Done | 30ef9a7 |
+| 4 | Default output `assets/audio/sfx/<slug>.mp3` with auto-versioning | Done | 30ef9a7 |
+| 5 | History record `phase: 'sfx'`, text, duration_seconds?, loop, prompt_influence, model_id, format, path | Done | 30ef9a7 |
+| 6 | Dry-run prints URL/body/path, skips network, no fs side effects | Done | 30ef9a7 |
+| 7 | `tests/sfx.test.js` — 38 tests (validation, body composition, loop+model constraint, dry-run, stubbed paths, auto-versioning, history) | Done | 30ef9a7 |
+
+### Verification
+
+- Unit suite: **180 pass / 0 fail** (38 new)
+- Full gate: exit 0
+- Architectural-lock spot-checks (4): all PASS — `responseType: 'binary'`, no content-type routing, validation pre-network (including for dry-run), history writer guarded
+- AC checklist: 17/17 PASS
+- Test-coverage spot-check: 3/3 real assertions
+- Verifier: fresh agent (sonnet)
+
+---
+
 ## Phase — 3 Voice generator + voices list
 
 **Plan:** plans/audiogen-skill.md
