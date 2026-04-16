@@ -1,5 +1,42 @@
 # Plan Report — /audiogen ElevenLabs Game-Audio Generation Skill
 
+## Phase — 2 Music generator [UNFINALIZED]
+
+**Plan:** plans/audiogen-skill.md
+**Status:** Completed (verified, pending cherry-pick)
+**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-2
+**Branch:** cp-audiogen-skill-2
+**Commit (worktree):** dab80d4
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | `runMusic` hits `POST /v1/music` with `responseType: 'binary'` | Done | dab80d4 |
+| 2 | `validateMusicOptions` — length range [3000,600000], wav_* reject, --loop reject | Done | dab80d4 |
+| 3 | `buildMusicRequest` — URL + body `{prompt, music_length_ms, force_instrumental?, seed?}` | Done | dab80d4 |
+| 4 | Default output `assets/audio/music/<slug>.mp3` with auto-versioning | Done | dab80d4 |
+| 5 | History record: `phase:'music'`, prompt, length, optional seed/force_instrumental, format, path | Done | dab80d4 |
+| 6 | Dry-run prints URL, body JSON, output path; skips network | Done | dab80d4 |
+| 7 | `tests/music.test.js` — 27 unit tests (validation, body, dry-run, stub response paths, versioning) | Done | dab80d4 |
+
+### Verification
+
+- Unit suite: **77 pass / 0 fail** (`node --test tests/*.test.js`)
+- Full gate: exit 0 (`bash scripts/test-all.sh`) — E2E + build still stub until Phase 6
+- Architectural-lock spot-checks (5 items): all PASS
+  - `callElevenLabs({ responseType: 'binary' })`, no content-type routing, validation pre-network, dry-run early-return, history writer guarded
+- Acceptance criteria: 15/15 PASS
+- Test-coverage spot-check: 3 tests inspected, real assertions (no todo/skip/ok-true placeholders)
+- Verifier: fresh agent (sonnet), not the implementer
+
+### Notes
+
+- Impl agent discovered and worked around a node:test footgun: overriding `process.stdout.write` for capture clobbers the TAP reporter; injected a `deps.stdout` capture stream into `runMusic` instead. Only `process.stderr.write` + `process.exit` are overridden in test helpers. Documented in `tests/music.test.js` header.
+- `execFileSync` stderr leak in Node 22 shows "#" comments in TAP output for CLI integration tests — cosmetic only, asserts still pass on `e.stderr`.
+
+---
+
 ## Phase — 1 Scaffold & shared core
 
 **Plan:** plans/audiogen-skill.md
