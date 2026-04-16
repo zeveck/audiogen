@@ -1,12 +1,13 @@
 # Plan Report — /audiogen ElevenLabs Game-Audio Generation Skill
 
-## Phase — 5 SKILL.md + reference.md [UNFINALIZED]
+## Phase — 5 SKILL.md + reference.md
 
 **Plan:** plans/audiogen-skill.md
-**Status:** Completed (verified, pending cherry-pick)
-**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-5
-**Branch:** cp-audiogen-skill-5
+**Status:** Landed
+**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-5 (removed after land)
+**Branch:** cp-audiogen-skill-5 (deleted after land)
 **Commit (worktree):** b1e4db9
+**Commit (main):** d91b20e
 
 ### Work Items
 

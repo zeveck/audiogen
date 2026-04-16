@@ -48,7 +48,7 @@ Node.js floor: **≥ 20.14** (required for the built-in `process.loadEnvFile`).
 | 2 — Music generator | ✅ | `9238387` | 77/77 tests (27 new), verifier `dab80d4` |
 | 3 — Voice generator + voices list (v2 + pagination) | ✅ | `c25968e` | 142/142 tests (65 new), verifier `1769160` |
 | 4 — SFX generator | ✅ | `48b069d` | 180/180 tests (38 new), verifier `30ef9a7` |
-| 5 — SKILL.md + reference.md | 🟡 | | |
+| 5 — SKILL.md + reference.md | ✅ | `d91b20e` | SKILL.md 376L, reference.md 614L; 180 unit + 12 build tests, verifier `b1e4db9` |
 | 6 — Install flow, smoke tests, zskills test wiring | ⬚ | | |
 
 ---
