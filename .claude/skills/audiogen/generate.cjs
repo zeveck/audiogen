@@ -1138,8 +1138,213 @@ async function runTTS(parsed, deps = {}) {
   return { url, body, outputPath, dryRun: false, result };
 }
 
-async function runSFX(_parsed) {
-  throw new Error('not yet implemented');
+// ────────────────────────────────────────────────────────────────────
+// SFX (sound-generation) subcommand
+// ────────────────────────────────────────────────────────────────────
+
+// Sound-generation endpoint supports mp3_*, pcm_*, opus_*, ulaw_8000, alaw_8000.
+// Explicitly excludes wav_* (matches music endpoint's family support).
+const SFX_OUTPUT_FORMAT_RE =
+  /^(mp3_\d+_\d+|pcm_\d+|opus_\d+_\d+|ulaw_8000|alaw_8000)$/;
+
+const SFX_DURATION_MIN_S = 0.5;
+const SFX_DURATION_MAX_S = 30;
+const SFX_PROMPT_INFLUENCE_DEFAULT = 0.3;
+const SFX_PROMPT_INFLUENCE_MIN = 0;
+const SFX_PROMPT_INFLUENCE_MAX = 1;
+const SFX_DEFAULT_MODEL_ID = 'eleven_text_to_sound_v2';
+const SFX_DEFAULT_OUTPUT_FORMAT = 'mp3_44100_128';
+
+const SFX_WAV_REJECT_MSG =
+  'Sound-generation endpoint does not support WAV output. Use mp3_* or pcm_*.';
+const SFX_LOOP_MODEL_REJECT_MSG =
+  '--loop is only supported by eleven_text_to_sound_v2.';
+
+/**
+ * Validate and normalize sfx-subcommand options. Uses fail() on any
+ * pre-network error. Returns an object with resolved inputs.
+ *
+ * @param {object} parsed  parseArgs result.
+ * @returns {{text: string, outputFormat: string, modelId: string,
+ *           promptInfluence: number, loop: boolean,
+ *           durationSeconds?: number}}
+ */
+function validateSFXOptions(parsed) {
+  const { flags, positionals } = parsed;
+
+  // --output-format: default mp3; reject wav_*; validate family.
+  const outputFormat = flags.outputFormat || SFX_DEFAULT_OUTPUT_FORMAT;
+  if (typeof outputFormat === 'string' && /^wav_/i.test(outputFormat)) {
+    fail(SFX_WAV_REJECT_MSG);
+  }
+  if (!SFX_OUTPUT_FORMAT_RE.test(outputFormat)) {
+    fail(
+      `invalid --output-format "${outputFormat}" for sfx. Expected mp3_<rate>_<br>, pcm_<rate>, opus_<rate>_<br>, ulaw_8000, or alaw_8000.`
+    );
+  }
+
+  // text: non-empty after trim (required by the endpoint).
+  const text = positionals.join(' ').trim();
+  if (text.length === 0) {
+    fail('sfx subcommand requires non-empty text.');
+  }
+
+  // --duration: optional finite number in [0.5, 30].
+  let durationSeconds;
+  if (flags.duration !== undefined) {
+    const n = Number(flags.duration);
+    if (!Number.isFinite(n)) {
+      fail(
+        `--duration must be a number in [${SFX_DURATION_MIN_S}, ${SFX_DURATION_MAX_S}]; got "${flags.duration}".`
+      );
+    }
+    if (n < SFX_DURATION_MIN_S || n > SFX_DURATION_MAX_S) {
+      fail(
+        `--duration must be in [${SFX_DURATION_MIN_S}, ${SFX_DURATION_MAX_S}]; got ${n}.`
+      );
+    }
+    durationSeconds = n;
+  }
+
+  // --prompt-influence: optional finite number in [0, 1]; default 0.3.
+  let promptInfluence = SFX_PROMPT_INFLUENCE_DEFAULT;
+  if (flags.promptInfluence !== undefined) {
+    const n = Number(flags.promptInfluence);
+    if (!Number.isFinite(n)) {
+      fail(
+        `--prompt-influence must be a number in [${SFX_PROMPT_INFLUENCE_MIN}, ${SFX_PROMPT_INFLUENCE_MAX}]; got "${flags.promptInfluence}".`
+      );
+    }
+    if (n < SFX_PROMPT_INFLUENCE_MIN || n > SFX_PROMPT_INFLUENCE_MAX) {
+      fail(
+        `--prompt-influence must be in [${SFX_PROMPT_INFLUENCE_MIN}, ${SFX_PROMPT_INFLUENCE_MAX}]; got ${n}.`
+      );
+    }
+    promptInfluence = n;
+  }
+
+  // --model-id: default to v2.
+  const modelId = flags.modelId || SFX_DEFAULT_MODEL_ID;
+
+  // --loop + non-v2 model combination is rejected.
+  const loop = !!flags.loop;
+  if (loop && modelId !== SFX_DEFAULT_MODEL_ID) {
+    fail(SFX_LOOP_MODEL_REJECT_MSG);
+  }
+
+  const out = {
+    text,
+    outputFormat,
+    modelId,
+    promptInfluence,
+    loop,
+  };
+  if (durationSeconds !== undefined) out.durationSeconds = durationSeconds;
+  return out;
+}
+
+/**
+ * Build the sfx request URL + body. Pure function (no fs, no network).
+ *
+ * Body always includes: text, model_id, prompt_influence.
+ * Body conditionally includes: duration_seconds (if set), loop (if true).
+ *
+ * @param {object} opts
+ * @returns {{url: string, body: object}}
+ */
+function buildSFXRequest({ text, outputFormat, modelId, promptInfluence, loop, durationSeconds }) {
+  const url =
+    `${BASE_URL}/v1/sound-generation?output_format=${encodeURIComponent(outputFormat)}`;
+  const body = {
+    text,
+    model_id: modelId,
+    prompt_influence: promptInfluence,
+  };
+  if (durationSeconds !== undefined) body.duration_seconds = durationSeconds;
+  if (loop) body.loop = true;
+  return { url, body };
+}
+
+/**
+ * runSFX — implement the `sfx` subcommand end-to-end.
+ *
+ * Validates flags (pre-network, fires even for --dry-run), builds the
+ * request, resolves the output path, and either prints a dry-run block
+ * or POSTs to /v1/sound-generation and streams the response to disk.
+ * On success, appends one history record and prints the output path.
+ *
+ * @param {object} parsed  parseArgs result.
+ * @param {object} [deps]  Injectable dependencies for tests.
+ */
+async function runSFX(parsed, deps = {}) {
+  const {
+    fetchImpl,
+    appendHistoryFn = appendHistory,
+    writeHistoryFn,
+    stdout = process.stdout,
+  } = deps;
+
+  const { flags } = parsed;
+  const opts = validateSFXOptions(parsed);
+
+  const { url, body } = buildSFXRequest(opts);
+
+  const outputPath = resolveOutputPath({
+    type: 'sfx',
+    prompt: opts.text,
+    outputOption: flags.output,
+    outputFormat: opts.outputFormat,
+    force: !!flags.force,
+    tz: 'America/New_York',
+  });
+
+  if (flags.dryRun) {
+    stdout.write('audiogen dry-run (sfx)\n');
+    stdout.write(`  url: ${url}\n`);
+    stdout.write(`  body: ${JSON.stringify(body)}\n`);
+    stdout.write(`  output: ${outputPath}\n`);
+    return { url, body, outputPath, dryRun: true };
+  }
+
+  // Live call.
+  const callOpts = {
+    method: 'POST',
+    path: '/v1/sound-generation',
+    query: { output_format: opts.outputFormat },
+    body,
+    outputPath,
+    responseType: 'binary',
+  };
+  if (fetchImpl) callOpts.fetchImpl = fetchImpl;
+
+  const result = await callElevenLabs(callOpts);
+
+  // History record — best-effort; failures surface as stderr warnings only.
+  const record = {
+    ts: new Date().toISOString(),
+    type: 'sfx',
+    phase: 'sfx',
+    text: opts.text,
+    model_id: opts.modelId,
+    prompt_influence: opts.promptInfluence,
+    loop: opts.loop,
+    output_format: opts.outputFormat,
+    output_path: outputPath,
+  };
+  if (opts.durationSeconds !== undefined) record.duration_seconds = opts.durationSeconds;
+  if (flags.historyId) record.history_id = flags.historyId;
+  if (flags.historyParent) record.parent_id = flags.historyParent;
+  if (result && result.requestId) record.request_id = result.requestId;
+  if (result && result.bytesWritten) record.bytes = result.bytesWritten;
+
+  if (writeHistoryFn) {
+    appendHistoryFn(record, writeHistoryFn);
+  } else {
+    appendHistoryFn(record);
+  }
+
+  stdout.write(`${outputPath}\n`);
+  return { url, body, outputPath, dryRun: false, result };
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -1510,51 +1715,15 @@ async function main(argv) {
     return;
   }
 
-  if (flags.dryRun) {
-    // Only sfx still uses the generic dry-run block; phase 4 replaces it.
-    const outputFormat = flags.outputFormat || 'mp3_44100_128';
-    const prompt = parsed.positionals.join(' ');
-    let url = '';
-    let requestBody = {};
-    const tz = 'America/New_York';
-
-    if (subcommand === 'sfx') {
-      url = `${BASE_URL}/v1/sound-generation?output_format=${encodeURIComponent(outputFormat)}`;
-      requestBody = { text: prompt };
-      if (flags.duration !== undefined)
-        requestBody.duration_seconds = Number(flags.duration);
-      if (flags.promptInfluence !== undefined)
-        requestBody.prompt_influence = Number(flags.promptInfluence);
-      if (flags.loop) requestBody.loop = true;
-      if (flags.modelId) requestBody.model_id = flags.modelId;
+  // SFX: routes through runSFX (pre-network validation + dry-run + live).
+  if (subcommand === 'sfx') {
+    try {
+      if (!flags.dryRun) assertApiKey();
+      await runSFX(parsed);
+    } catch (e) {
+      fail(e && e.message ? e.message : String(e));
     }
-
-    const outputPath = resolveOutputPath({
-      type: subcommand,
-      prompt,
-      outputOption: flags.output,
-      outputFormat,
-      force: !!flags.force,
-      tz,
-    });
-
-    // Human-readable block. No fs mutations, no mkdir, no writes.
-    process.stdout.write(`audiogen dry-run (${subcommand})\n`);
-    process.stdout.write(`  url: ${url}\n`);
-    process.stdout.write(`  body: ${JSON.stringify(requestBody)}\n`);
-    if (outputPath) {
-      process.stdout.write(`  output: ${outputPath}\n`);
-    }
-    process.exit(0);
-  }
-
-  // Live run — ensure API key and dispatch to remaining subcommand stubs.
-  // (music, voice, voices are handled earlier in their own paths.)
-  assertApiKey();
-  try {
-    if (subcommand === 'sfx') await runSFX(parsed);
-  } catch (e) {
-    fail(e && e.message ? e.message : String(e));
+    return;
   }
 }
 
@@ -1618,8 +1787,20 @@ module.exports = {
   VOICES_CACHE_TTL_MS,
   VOICES_PAGE_SIZE_DEFAULT,
   VOICES_TABLE_ROW_CAP,
-  // other subcommand stubs
+  // sfx subcommand
   runSFX,
+  validateSFXOptions,
+  buildSFXRequest,
+  SFX_OUTPUT_FORMAT_RE,
+  SFX_DURATION_MIN_S,
+  SFX_DURATION_MAX_S,
+  SFX_PROMPT_INFLUENCE_DEFAULT,
+  SFX_PROMPT_INFLUENCE_MIN,
+  SFX_PROMPT_INFLUENCE_MAX,
+  SFX_DEFAULT_MODEL_ID,
+  SFX_DEFAULT_OUTPUT_FORMAT,
+  SFX_WAV_REJECT_MSG,
+  SFX_LOOP_MODEL_REJECT_MSG,
   // main (for integration tests)
   main,
 };
