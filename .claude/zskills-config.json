@@ -8,7 +8,7 @@
     "branch_prefix": "feat/"
   },
   "testing": {
-    "unit_cmd": "",
+    "unit_cmd": "node --test tests/*.test.js",
     "full_cmd": "bash scripts/test-all.sh",
     "output_file": ".test-results.txt",
     "file_patterns": []

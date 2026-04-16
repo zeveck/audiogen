@@ -1,2 +1,5 @@
 .zskills/tracking/
 .test-results.txt
+.audiogen-history.jsonl
+.audiogen-voices.json
+assets/audio/
