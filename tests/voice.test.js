@@ -204,6 +204,47 @@ describe('resolveVoiceId', () => {
     assert.equal(out.voiceId, '21m00Tcm4TlvDq8ikWAM');
   });
 
+  it('prefix match: "Alice" resolves to "Alice - Clear, Engaging Educator"', () => {
+    const cache = writeCache(tmp, [
+      { voice_id: 'Xb7hH8MSUJpSbSDYk0k2', name: 'Alice - Clear, Engaging Educator' },
+      { voice_id: 'nPczCjzI2devNBz1zQrb', name: 'Brian - Deep, Resonant and Comforting' },
+    ]);
+    const out = resolveVoiceId('Alice', cache);
+    assert.equal(out.voiceId, 'Xb7hH8MSUJpSbSDYk0k2');
+    assert.equal(out.voiceName, 'Alice - Clear, Engaging Educator');
+    assert.equal(out.shadowWarning, undefined);
+  });
+
+  it('prefix match: multiple matches → DISAMBIGUATION', () => {
+    const cache = writeCache(tmp, [
+      { voice_id: 'AAAAAAAAAAAAAAAAAAAA', name: 'Alice - Clear Educator' },
+      { voice_id: 'BBBBBBBBBBBBBBBBBBBB', name: 'Alice - Playful Bright' },
+    ]);
+    assert.throws(
+      () => resolveVoiceId('Alice', cache),
+      (e) => e.code === 'DISAMBIGUATION' && e.matches.length === 2
+    );
+  });
+
+  it('prefix match requires word boundary: "Ali" does NOT match "Alice - ..."', () => {
+    const cache = writeCache(tmp, [
+      { voice_id: 'Xb7hH8MSUJpSbSDYk0k2', name: 'Alice - Clear, Engaging Educator' },
+    ]);
+    assert.throws(
+      () => resolveVoiceId('Ali', cache),
+      (e) => e.code === 'NO_MATCH'
+    );
+  });
+
+  it('exact match takes priority over prefix match', () => {
+    const cache = writeCache(tmp, [
+      { voice_id: 'EXACTIDAAAAAAAAAAAAA', name: 'Alice' },
+      { voice_id: 'PREFIXIDAAAAAAAAAAAA', name: 'Alice - Clear Educator' },
+    ]);
+    const out = resolveVoiceId('Alice', cache);
+    assert.equal(out.voiceId, 'EXACTIDAAAAAAAAAAAAA');
+  });
+
   it('duplicate names → DISAMBIGUATION error listing all matches', () => {
     const cache = writeCache(tmp, [
       { voice_id: 'AAAAAAAAAAAAAAAAAAAA', name: 'Adam', category: 'premade',

@@ -852,6 +852,13 @@ const VOICE_OUTPUT_FORMAT_RE =
  *         include a `shadowWarning` describing the cache-first
  *         precedence.
  *       - multiple matches → fail with disambiguation block.
+ *       - 0 matches → step 3b.
+ *   3b. Prefix match against names (case-insensitive), requiring a
+ *       word-boundary follower (space / dash / comma) so "Alice" matches
+ *       "Alice - Clear, Engaging Educator" but "Ali" doesn't match "Alice":
+ *       - 1 match → return its voice_id (with shadowWarning if input is
+ *         also ID-shaped).
+ *       - multiple matches → fail with disambiguation block.
  *       - 0 matches → step 4.
  *   4. If input matches ID regex → return input verbatim.
  *      Else → fail "No voice named '<input>' in cache…"
@@ -929,7 +936,44 @@ function resolveVoiceId(rawInput, cachePath, deps = {}) {
     throw err;
   }
 
-  // zero name matches
+  // Prefix match fallback — ElevenLabs names are "FirstName - Description",
+  // so exact match on "Alice" never hits. Require a word-boundary follower
+  // (space / dash / comma) so "Ali" doesn't greedily match "Alice".
+  const prefixMatches = cache.voices.filter((v) => {
+    if (!v || typeof v.name !== 'string') return false;
+    const nameLower = v.name.toLowerCase();
+    if (nameLower === lower) return false; // handled above
+    if (!nameLower.startsWith(lower)) return false;
+    const next = nameLower.charAt(lower.length);
+    return next === ' ' || next === '-' || next === ',';
+  });
+
+  if (prefixMatches.length === 1) {
+    const hit = prefixMatches[0];
+    const out = { voiceId: hit.voice_id, voiceName: hit.name };
+    if (isIdPattern) {
+      out.shadowWarning =
+        `audiogen: '${input}' matches both a voice-id pattern and a cached voice name prefix; ` +
+        `resolving as '${hit.name}'. If you intended the raw ID, rename the conflicting voice.`;
+    }
+    return out;
+  }
+
+  if (prefixMatches.length > 1) {
+    const err = new Error(
+      `Multiple cached voices match prefix "${input}". Pass the full name or ID: --voice-id <id>`
+    );
+    err.code = 'DISAMBIGUATION';
+    err.matches = prefixMatches.map((v) => ({
+      voice_id: v.voice_id,
+      name: v.name,
+      category: v.category,
+      labels: v.labels || {},
+    }));
+    throw err;
+  }
+
+  // zero exact + zero prefix matches
   if (isIdPattern) {
     return { voiceId: input, voiceName: undefined };
   }
