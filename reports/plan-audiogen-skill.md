@@ -1,12 +1,13 @@
 # Plan Report — /audiogen ElevenLabs Game-Audio Generation Skill
 
-## Phase — 6 Install + test wiring [UNFINALIZED]
+## Phase — 6 Install + test wiring
 
 **Plan:** plans/audiogen-skill.md
-**Status:** Completed (verified, pending cherry-pick)
-**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-6
-**Branch:** cp-audiogen-skill-6
+**Status:** Landed — PLAN COMPLETE
+**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-6 (removed after land)
+**Branch:** cp-audiogen-skill-6 (deleted after land)
 **Commit (worktree):** 30bedf7
+**Commit (main):** d767c48
 
 ### Work Items
 
