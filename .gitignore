@@ -3,3 +3,5 @@
 .audiogen-history.jsonl
 .audiogen-voices.json
 assets/audio/
+.env
+.env.local
