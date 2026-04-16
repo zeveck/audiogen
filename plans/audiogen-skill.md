@@ -1,7 +1,7 @@
 ---
 title: /audiogen — ElevenLabs Game-Audio Generation Skill
 created: 2026-04-15
-status: active
+status: complete
 ---
 
 # Plan: /audiogen — ElevenLabs Game-Audio Generation Skill
