@@ -44,7 +44,7 @@ Node.js floor: **≥ 20.14** (required for the built-in `process.loadEnvFile`).
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Scaffold & shared core | ⬚ | | |
+| 1 — Scaffold & shared core | 🟡 | | |
 | 2 — Music generator | ⬚ | | |
 | 3 — Voice generator + voices list (v2 + pagination) | ⬚ | | |
 | 4 — SFX generator | ⬚ | | |
