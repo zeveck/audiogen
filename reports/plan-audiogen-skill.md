@@ -1,12 +1,13 @@
 # Plan Report — /audiogen ElevenLabs Game-Audio Generation Skill
 
-## Phase — 2 Music generator [UNFINALIZED]
+## Phase — 2 Music generator
 
 **Plan:** plans/audiogen-skill.md
-**Status:** Completed (verified, pending cherry-pick)
-**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-2
-**Branch:** cp-audiogen-skill-2
+**Status:** Landed
+**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-2 (removed after land)
+**Branch:** cp-audiogen-skill-2 (deleted after land)
 **Commit (worktree):** dab80d4
+**Commit (main):** 9238387
 
 ### Work Items
 
