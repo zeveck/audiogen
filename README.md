@@ -20,7 +20,7 @@ so you can reproduce them.
 ▶️ [`examples/music-chiptune-boss-battle.mp3`](examples/music-chiptune-boss-battle.mp3)
 
 ```
-/audiogen music aggressive 8-bit NES chiptune boss battle, fast driving 150 BPM, pulse-wave lead, triangle bass, noise snare, heroic minor key --length-ms 12000 --force-instrumental --force
+/audiogen music aggressive 8-bit NES chiptune boss battle, fast driving 150 BPM, pulse-wave lead, triangle bass, noise snare, heroic minor key --length-ms 12000 --force-instrumental
 ```
 
 ### 🎙 Voice — Alice TTS (2 s, 26 KB)
