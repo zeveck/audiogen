@@ -1,5 +1,37 @@
 # Plan Report — /audiogen ElevenLabs Game-Audio Generation Skill
 
+## Phase — 6 Install + test wiring [UNFINALIZED]
+
+**Plan:** plans/audiogen-skill.md
+**Status:** Completed (verified, pending cherry-pick)
+**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-6
+**Branch:** cp-audiogen-skill-6
+**Commit (worktree):** 30bedf7
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | Rewrite `scripts/test-all.sh`: strip port-gate + dead helpers (`get_port`/`check_port`/`has_changed_source_files`); wire real UNIT/E2E/BUILD commands; E2E auto-skip on missing `ELEVENLABS_API_KEY` | Done | 30bedf7 |
+| 2 | Create `tests/e2e/audiogen-e2e.js` — smoke music/voice/sfx/voices via subprocess; relaxed MP3 header check (`ID3` or `0xFF E?`); SKIPPED cleanly without key | Done | 30bedf7 |
+| 3 | Update `CLAUDE.md`: replace `_TODO:` layout placeholder, dev-server TODO, auth-bypass block, test-files TODO. Preserve backticked negative-example `# TODO: UNIT_TEST_CMD` on line 38 | Done | 30bedf7 |
+| 4 | Create `README.md`: 3 curl install + agent-assisted install, `REPO_URL` template, usage, env, Node ≥ 20.14, GitHub Action example, license note | Done | 30bedf7 |
+| 5 | Set `testing.file_patterns` in `.claude/zskills-config.json` | Done | 30bedf7 |
+
+### Verification
+
+- Unit: **180 pass / 0 fail**
+- Build: **12 pass / 0 fail**
+- E2E: SKIPPED without key (exits 0 with clear message)
+- Full gate (`bash scripts/test-all.sh`): **exit 0** — Unit PASSED (real 180-test TAP, not the old echo-TODO stub), E2E SKIPPED (no key), Build PASSED
+- test-all.sh content checks: 5/5 PASS (`check_port`/`get_port`/`has_changed_source_files` = 0; `[TODO]` = 0; real commands wired)
+- CLAUDE.md TODO checks: `^# TODO:` = 0; `_TODO:` = 0; backticked negative example still present
+- README.md checks: 6/6 PASS
+- E2E smoke code inspection: subprocess via `execFileSync`, relaxed MP3 header check verified
+- Verifier: fresh agent (sonnet)
+
+---
+
 ## Phase — 5 SKILL.md + reference.md
 
 **Plan:** plans/audiogen-skill.md

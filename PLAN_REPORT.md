@@ -8,4 +8,4 @@ _None._
 
 | Plan | Phases | Status | Report |
 |------|--------|--------|--------|
-| /audiogen ElevenLabs Game-Audio Generation Skill | 5/6 done | In progress | [reports/plan-audiogen-skill.md](reports/plan-audiogen-skill.md) |
+| /audiogen ElevenLabs Game-Audio Generation Skill | 6/6 done | Complete | [reports/plan-audiogen-skill.md](reports/plan-audiogen-skill.md) |
