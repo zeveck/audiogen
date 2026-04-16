@@ -606,12 +606,213 @@ async function callElevenLabs(opts) {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Subcommand stubs (phases 2-4 implement these)
+// Music subcommand
 // ────────────────────────────────────────────────────────────────────
 
-async function runMusic(_parsed) {
-  throw new Error('not yet implemented');
+// Music endpoint supports mp3_*, pcm_*, opus_*, ulaw_8000, alaw_8000.
+// Explicitly excludes wav_*.
+const MUSIC_OUTPUT_FORMAT_RE =
+  /^(mp3_\d+_\d+|pcm_\d+|opus_\d+_\d+|ulaw_8000|alaw_8000)$/;
+
+const MUSIC_LENGTH_MIN_MS = 3000;
+const MUSIC_LENGTH_MAX_MS = 600000;
+const MUSIC_LENGTH_DEFAULT_MS = 30000;
+
+const MUSIC_LOOP_REJECT_MSG =
+  'Music loops are not supported. Loop playback in your engine / HTML audio.';
+const MUSIC_WAV_REJECT_MSG =
+  'Music endpoint does not support WAV output. Use mp3_* or pcm_*.';
+
+/**
+ * Validate and normalize music-subcommand options. Throws via fail() on any
+ * pre-network error. Returns an object with resolved inputs.
+ *
+ * @param {object} parsed  Output of parseArgs.
+ * @returns {{prompt: string, outputFormat: string, musicLengthMs: number,
+ *           forceInstrumental: boolean, seed: number|undefined}}
+ */
+function validateMusicOptions(parsed) {
+  const { flags, positionals } = parsed;
+
+  // --loop: reject music-side loops before anything else.
+  if (flags.loop) {
+    fail(MUSIC_LOOP_REJECT_MSG);
+  }
+
+  // --output-format: validate against music regex, reject wav explicitly.
+  const outputFormat = flags.outputFormat || 'mp3_44100_128';
+  if (typeof outputFormat === 'string' && /^wav_/i.test(outputFormat)) {
+    fail(MUSIC_WAV_REJECT_MSG);
+  }
+  if (!MUSIC_OUTPUT_FORMAT_RE.test(outputFormat)) {
+    fail(
+      `invalid --output-format "${outputFormat}" for music. Expected mp3_<rate>_<br>, pcm_<rate>, opus_<rate>_<br>, ulaw_8000, or alaw_8000.`
+    );
+  }
+
+  // --length-ms: integer in [3000, 600000]; default 30000.
+  let musicLengthMs = MUSIC_LENGTH_DEFAULT_MS;
+  if (flags.lengthMs !== undefined) {
+    const raw = String(flags.lengthMs);
+    if (!/^-?\d+$/.test(raw)) {
+      fail(`--length-ms must be an integer; got "${flags.lengthMs}".`);
+    }
+    musicLengthMs = Number(raw);
+    if (!Number.isFinite(musicLengthMs)) {
+      fail(`--length-ms must be an integer; got "${flags.lengthMs}".`);
+    }
+  }
+  if (
+    musicLengthMs < MUSIC_LENGTH_MIN_MS ||
+    musicLengthMs > MUSIC_LENGTH_MAX_MS
+  ) {
+    fail(
+      `music_length_ms must be in [${MUSIC_LENGTH_MIN_MS}, ${MUSIC_LENGTH_MAX_MS}]; got ${musicLengthMs}.`
+    );
+  }
+
+  // --seed: optional integer.
+  let seed;
+  if (flags.seed !== undefined) {
+    const raw = String(flags.seed);
+    if (!/^-?\d+$/.test(raw)) {
+      fail(`--seed must be an integer; got "${flags.seed}".`);
+    }
+    seed = Number(raw);
+    if (!Number.isFinite(seed)) {
+      fail(`--seed must be an integer; got "${flags.seed}".`);
+    }
+  }
+
+  // prompt: non-empty after trim.
+  const prompt = positionals.join(' ').trim();
+  if (prompt.length === 0) {
+    fail('music subcommand requires a non-empty prompt.');
+  }
+
+  return {
+    prompt,
+    outputFormat,
+    musicLengthMs,
+    forceInstrumental: !!flags.forceInstrumental,
+    seed,
+  };
 }
+
+/**
+ * Build the music request URL + body. Pure function (no fs, no network).
+ *
+ * @param {object} opts
+ * @param {string} opts.prompt
+ * @param {string} opts.outputFormat
+ * @param {number} opts.musicLengthMs
+ * @param {boolean} opts.forceInstrumental
+ * @param {number} [opts.seed]
+ * @returns {{url: string, body: object}}
+ */
+function buildMusicRequest({
+  prompt,
+  outputFormat,
+  musicLengthMs,
+  forceInstrumental,
+  seed,
+}) {
+  const url = `${BASE_URL}/v1/music?output_format=${encodeURIComponent(outputFormat)}`;
+  const body = {
+    prompt,
+    music_length_ms: musicLengthMs,
+  };
+  if (forceInstrumental) body.force_instrumental = true;
+  if (seed !== undefined) body.seed = seed;
+  return { url, body };
+}
+
+/**
+ * runMusic — implement the `music` subcommand end-to-end.
+ *
+ * Validates flags (pre-network), builds the request, resolves the output
+ * path, and either prints a dry-run block or POSTs to /v1/music and streams
+ * the response to disk. On success, appends one history record and prints
+ * the output path.
+ *
+ * @param {object} parsed  parseArgs result.
+ * @param {object} [deps]  Injectable dependencies for tests.
+ * @param {typeof fetch} [deps.fetchImpl]
+ * @param {(record: object, writeFn?: Function) => void} [deps.appendHistoryFn]
+ * @param {(path: string, data: string) => void} [deps.writeHistoryFn]
+ * @param {NodeJS.WritableStream} [deps.stdout]
+ */
+async function runMusic(parsed, deps = {}) {
+  const {
+    fetchImpl,
+    appendHistoryFn = appendHistory,
+    writeHistoryFn,
+    stdout = process.stdout,
+  } = deps;
+
+  const { flags } = parsed;
+  const opts = validateMusicOptions(parsed);
+
+  const { url, body } = buildMusicRequest(opts);
+
+  const outputPath = resolveOutputPath({
+    type: 'music',
+    prompt: opts.prompt,
+    outputOption: flags.output,
+    outputFormat: opts.outputFormat,
+    force: !!flags.force,
+    tz: 'America/New_York',
+  });
+
+  if (flags.dryRun) {
+    stdout.write('audiogen dry-run (music)\n');
+    stdout.write(`  url: ${url}\n`);
+    stdout.write(`  body: ${JSON.stringify(body)}\n`);
+    stdout.write(`  output: ${outputPath}\n`);
+    return { url, body, outputPath, dryRun: true };
+  }
+
+  // Live call.
+  const callOpts = {
+    method: 'POST',
+    path: '/v1/music',
+    query: { output_format: opts.outputFormat },
+    body,
+    outputPath,
+    responseType: 'binary',
+  };
+  if (fetchImpl) callOpts.fetchImpl = fetchImpl;
+
+  const result = await callElevenLabs(callOpts);
+
+  // History record — best-effort; failures surface as stderr warnings only.
+  const record = {
+    ts: new Date().toISOString(),
+    type: 'music',
+    phase: 'music',
+    prompt: opts.prompt,
+    music_length_ms: opts.musicLengthMs,
+    output_format: opts.outputFormat,
+    output_path: outputPath,
+    model_id: flags.modelId || 'music_v1 (server default)',
+  };
+  if (opts.forceInstrumental) record.force_instrumental = true;
+  if (opts.seed !== undefined) record.seed = opts.seed;
+  if (flags.historyId) record.history_id = flags.historyId;
+  if (flags.historyParent) record.parent_id = flags.historyParent;
+  if (result && result.requestId) record.request_id = result.requestId;
+  if (result && result.bytesWritten) record.bytes = result.bytesWritten;
+
+  if (writeHistoryFn) {
+    appendHistoryFn(record, writeHistoryFn);
+  } else {
+    appendHistoryFn(record);
+  }
+
+  stdout.write(`${outputPath}\n`);
+  return { url, body, outputPath, dryRun: false, result };
+}
+
 async function runTTS(_parsed) {
   throw new Error('not yet implemented');
 }
@@ -649,24 +850,28 @@ async function main(argv) {
 
   const { subcommand, flags } = parsed;
 
+  // Music has its own validation + dry-run + live path. Route here so
+  // pre-network validation (--loop, --output-format wav, --length-ms bounds)
+  // fires even for --dry-run.
+  if (subcommand === 'music') {
+    try {
+      await runMusic(parsed);
+    } catch (e) {
+      fail(e && e.message ? e.message : String(e));
+    }
+    return;
+  }
+
   if (flags.dryRun) {
-    // Print a dry-run block. Phases 2-4 add richer bodies; Phase 1 prints
-    // just enough to satisfy the acceptance criteria's dry-run assertions.
+    // Print a dry-run block for voice/sfx/voices. Phases 3-4 will replace
+    // these branches with per-subcommand dry-run paths analogous to music.
     const outputFormat = flags.outputFormat || 'mp3_44100_128';
     const prompt = parsed.positionals.join(' ');
     let url = '';
     let requestBody = {};
     const tz = 'America/New_York';
 
-    if (subcommand === 'music') {
-      url = `${BASE_URL}/v1/music?output_format=${encodeURIComponent(outputFormat)}`;
-      requestBody = {
-        prompt,
-        music_length_ms: flags.lengthMs ? Number(flags.lengthMs) : 30000,
-      };
-      if (flags.forceInstrumental) requestBody.force_instrumental = true;
-      if (flags.modelId) requestBody.model_id = flags.modelId;
-    } else if (subcommand === 'voice') {
+    if (subcommand === 'voice') {
       const voiceId = flags.voiceId || '<voice-id>';
       url = `${BASE_URL}/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${encodeURIComponent(outputFormat)}`;
       requestBody = { text: prompt };
@@ -734,10 +939,10 @@ async function main(argv) {
   }
 
   // Live run — ensure API key and dispatch to subcommand stub.
+  // (music is handled earlier in its own path.)
   assertApiKey();
   try {
-    if (subcommand === 'music') await runMusic(parsed);
-    else if (subcommand === 'voice') await runTTS(parsed);
+    if (subcommand === 'voice') await runTTS(parsed);
     else if (subcommand === 'sfx') await runSFX(parsed);
     else if (subcommand === 'voices') await runVoicesList(parsed);
   } catch (e) {
@@ -773,8 +978,17 @@ module.exports = {
   // help
   HELP_TEXT,
   printHelp,
-  // subcommand stubs
+  // music subcommand
   runMusic,
+  validateMusicOptions,
+  buildMusicRequest,
+  MUSIC_OUTPUT_FORMAT_RE,
+  MUSIC_LENGTH_MIN_MS,
+  MUSIC_LENGTH_MAX_MS,
+  MUSIC_LENGTH_DEFAULT_MS,
+  MUSIC_LOOP_REJECT_MSG,
+  MUSIC_WAV_REJECT_MSG,
+  // other subcommand stubs
   runTTS,
   runSFX,
   runVoicesList,
