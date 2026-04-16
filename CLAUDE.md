@@ -2,29 +2,26 @@
 
 ## Architecture
 
-_TODO: describe project layout here (entry points, major directories). Placeholder created by /update-zskills._
+The /audiogen skill lives at `.claude/skills/audiogen/` as three files — SKILL.md (prompt/prose), generate.cjs (zero-dep Node CLI, dual-shape as skill backend + standalone tool), reference.md (preset library). Tests in `tests/`; helper scripts in `scripts/`; hooks in `.claude/hooks/`.
 
 ## Dev Server
 
-```bash
-# TODO: set dev server command (e.g. npm start)
-```
+No dev server — /audiogen is a CLI-only skill.
 
 The port is determined automatically by `scripts/port.sh`: **8080** for the main repo (`/workspaces/audiogen`), a **deterministic unique port** for each worktree (derived from the project root path). Run `bash scripts/port.sh` to see your port. Override with `DEV_PORT=NNNN` env var if needed.
 
 **NEVER use `kill -9`, `killall`, `pkill`, or `fuser -k` to stop processes.** These can kill container-critical processes or disrupt other sessions' dev servers and E2E tests. If a port is busy, check what's on it with `lsof -i :<port>` and ask the user to stop it manually.
 
-**Auth gate:** The app requires a password. For automated browser testing, bypass it:
+**Auth gate:**
 ```js
-// TODO: set auth-bypass JS snippet, or delete this block if there is no auth gate
+// No auth gate — N/A for this project.
 ```
-Then reload the page.
 
 ## Tests
 
 ```bash
-# TODO: UNIT_TEST_CMD    # Unit tests only -- fast, use while working
-bash scripts/test-all.sh    # ALL suites -- use before committing
+node --test tests/*.test.js    # Unit tests only -- fast, use while working
+bash scripts/test-all.sh       # ALL suites -- use before committing
 ```
 
 **`bash scripts/test-all.sh` must pass before every commit.** When reporting test
@@ -55,7 +52,7 @@ file a GitHub issue with the error output and mark the test `it.skip('name
 
 ### Test files
 
-_TODO: describe test-file locations (e.g. tests/**/*.test.ts)._
+Unit tests: `tests/*.test.js`. Build-suite tests: `tests/build/*.test.js`. End-to-end tests: `tests/e2e/` (require `ELEVENLABS_API_KEY`; graceful skip otherwise).
 
 ## Playwright CLI (Browser Automation)
 

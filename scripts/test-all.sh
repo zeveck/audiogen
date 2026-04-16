@@ -1,20 +1,20 @@
 #!/bin/bash
 # test-all.sh -- Runs all test suites: unit, e2e, and build/codegen.
 #
-# - Unit tests: always run
-# - E2E tests: run if dev server is up on the derived port, skipped with warning otherwise
-# - Build/codegen tests: run if prerequisites are met, skipped with warning otherwise
-#
-# CONFIGURE: Replace the {{PLACEHOLDER}} values below with your project's commands.
+# - Unit tests: always run (node --test on tests/*.test.js).
+# - E2E tests: auto-skip when ELEVENLABS_API_KEY is unset; run end-to-end
+#   smoke against the ElevenLabs API otherwise.
+# - Build/codegen tests: syntax-scan generate.cjs + run tests/build/*.test.js
+#   which validate SKILL.md frontmatter + structural invariants.
 
 set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ─── CONFIGURE ──────────────────────────────────────────────────────
-UNIT_TEST_CMD='echo "[TODO] UNIT_TEST_CMD not configured — edit scripts/test-all.sh"'
-E2E_TEST_CMD='echo "[TODO] E2E_TEST_CMD not configured — edit scripts/test-all.sh"'
-BUILD_TEST_CMD='echo "[TODO] BUILD_TEST_CMD not configured — edit scripts/test-all.sh"'
+UNIT_TEST_CMD='node --test tests/*.test.js'
+E2E_TEST_CMD='node tests/e2e/audiogen-e2e.js'
+BUILD_TEST_CMD='node -c .claude/skills/audiogen/generate.cjs && node --test tests/build/*.test.js'
 # ────────────────────────────────────────────────────────────────────
 
 BOLD='\033[1m'
@@ -38,48 +38,8 @@ record() {
   RESULT_STATUSES+=("$2")
 }
 
-get_port() {
-  # Source port logic inline (same as port.sh)
-  if [[ -n "$DEV_PORT" ]]; then
-    echo "$DEV_PORT"
-    return
-  fi
-  local project_root
-  project_root="$(cd "$SCRIPT_DIR/.." && pwd)"
-  local main_repo='/workspaces/audiogen'
-  if [[ "$main_repo" != '{{MAIN_REPO_PATH}}' ]] && [[ "$project_root" == "$main_repo" ]]; then
-    echo 8080
-    return
-  fi
-  local hash
-  hash=$(printf '%s' "$project_root" | cksum | awk '{print $1}')
-  echo $(( 9000 + (hash % 51000) ))
-}
-
-check_port() {
-  # Check if a TCP port is open. Uses /dev/tcp (bash built-in).
-  local port=$1
-  (echo >/dev/tcp/127.0.0.1/"$port") 2>/dev/null
-}
-
 has_build_prerequisite() {
-  # CONFIGURE: check for your build test prerequisite (e.g., cargo)
-  command -v cargo &>/dev/null
-}
-
-has_changed_source_files() {
-  # Check if any staged or unstaged changes touch source files that E2E tests cover
-  local staged unstaged all_changed source_files
-  staged=$(git diff --cached --name-only 2>/dev/null)
-  unstaged=$(git diff --name-only 2>/dev/null)
-  all_changed=$(printf '%s\n%s' "$staged" "$unstaged" | sort -u | grep -v '^$')
-
-  source_files=$(echo "$all_changed" | grep -E '^(src/|tests/e2e/).*\.(js|ts|css|html)$')
-  if [[ -n "$source_files" ]]; then
-    echo "$source_files"
-    return 0
-  fi
-  return 1
+  command -v node >/dev/null
 }
 
 # ── 1. Unit + integration tests (always) ───────────────────────────
@@ -91,30 +51,20 @@ else
   record "Unit/integration" "fail"
 fi
 
-# ── 2. E2E tests (if dev server is up) ─────────────────────────────
+# ── 2. E2E tests (auto-skip when ELEVENLABS_API_KEY unset) ─────────
 
-PORT=$(get_port)
-
-if check_port "$PORT"; then
-  header "E2E Tests ($E2E_TEST_CMD)"
-  if eval "$E2E_TEST_CMD"; then
-    record "E2E" "pass"
+header "E2E Tests ($E2E_TEST_CMD)"
+E2E_OUT=$(eval "$E2E_TEST_CMD" 2>&1)
+EXIT=$?
+echo "$E2E_OUT"
+if [ "$EXIT" -eq 0 ]; then
+  if echo "$E2E_OUT" | grep -q "^\[skipped\]"; then
+    record "E2E" "skip"
   else
-    record "E2E" "fail"
+    record "E2E" "pass"
   fi
 else
-  header "E2E Tests ($E2E_TEST_CMD)"
-  if e2e_relevant=$(has_changed_source_files); then
-    printf '%bx FAILED -- dev server not running on port %s, but source files changed:%b\n' "$RED" "$PORT" "$RESET"
-    printf '  %s\n' "$e2e_relevant"
-    printf '\n  E2E tests cannot be skipped when src/ files are modified.\n'
-    printf '  Start the dev server and re-run tests.\n\n'
-    record "E2E" "fail"
-  else
-    printf '%b! SKIPPED -- dev server not running on port %s (no source files changed)%b\n' "$YELLOW" "$PORT" "$RESET"
-    printf '  Start the dev server to enable E2E tests.\n\n'
-    record "E2E" "skip"
-  fi
+  record "E2E" "fail"
 fi
 
 # ── 3. Build/codegen tests (if prerequisites are met) ──────────────
