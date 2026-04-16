@@ -60,7 +60,7 @@ Drops three files into `.claude/skills/audiogen/` in any project.
 
 ### Option 1 — let your agent do it
 
-> Install the audiogen skill from `github.com/<owner>/audiogen` into this project.
+> Install the audiogen skill from `github.com/zeveck/audiogen` into this project.
 
 Your Claude Code agent fetches the files, sets up the directory, and
 checks that Node ≥ 20.14 is available. Easiest path.
@@ -68,10 +68,9 @@ checks that Node ≥ 20.14 is available. Easiest path.
 ### Option 2 — three curls
 
 ```bash
-OWNER='<owner>'   # replace with the GitHub owner/org that hosts this fork
 mkdir -p .claude/skills/audiogen
 for f in SKILL.md generate.cjs reference.md; do
-  curl -fsSL "https://raw.githubusercontent.com/${OWNER}/audiogen/main/.claude/skills/audiogen/$f" \
+  curl -fsSL "https://raw.githubusercontent.com/zeveck/audiogen/main/.claude/skills/audiogen/$f" \
     -o ".claude/skills/audiogen/$f"
 done
 ```

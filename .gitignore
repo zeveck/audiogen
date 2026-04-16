@@ -5,3 +5,5 @@
 assets/audio/
 .env
 .env.local
+.claude/scheduled_tasks.lock
+.claude/scheduled_tasks.json
