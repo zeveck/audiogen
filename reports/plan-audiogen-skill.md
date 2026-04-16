@@ -1,12 +1,13 @@
 # Plan Report — /audiogen ElevenLabs Game-Audio Generation Skill
 
-## Phase — 4 SFX generator [UNFINALIZED]
+## Phase — 4 SFX generator
 
 **Plan:** plans/audiogen-skill.md
-**Status:** Completed (verified, pending cherry-pick)
-**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-4
-**Branch:** cp-audiogen-skill-4
+**Status:** Landed
+**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-4 (removed after land)
+**Branch:** cp-audiogen-skill-4 (deleted after land)
 **Commit (worktree):** 30ef9a7
+**Commit (main):** 48b069d
 
 ### Work Items
 
