@@ -17,6 +17,17 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 // ────────────────────────────────────────────────────────────────────
+// Load .env so an exported shell env var isn't required — mirrors the
+// behavior users expect from generate.cjs. Silent on missing file.
+// ────────────────────────────────────────────────────────────────────
+
+try {
+  process.loadEnvFile();
+} catch {
+  // No .env in cwd — caller may have exported env vars directly; fine.
+}
+
+// ────────────────────────────────────────────────────────────────────
 // Skip gate — before any test registration so the whole suite no-ops
 // when the caller lacks an API key.
 // ────────────────────────────────────────────────────────────────────
