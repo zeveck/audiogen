@@ -1,5 +1,41 @@
 # Plan Report — /audiogen ElevenLabs Game-Audio Generation Skill
 
+## Phase — 3 Voice generator + voices list [UNFINALIZED]
+
+**Plan:** plans/audiogen-skill.md
+**Status:** Completed (verified, pending cherry-pick)
+**Worktree:** /tmp/audiogen-cp-audiogen-skill-phase-3
+**Branch:** cp-audiogen-skill-3
+**Commit (worktree):** 1769160
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | `runTTS` hits `POST /v1/text-to-speech/{voice_id}` with `responseType: 'binary'` | Done | 1769160 |
+| 2 | `resolveVoiceId`: trim → cache-first name match → disambiguation → shadow warning → ID passthrough → hint-on-fail | Done | 1769160 |
+| 3 | `validateVoiceOptions`: empty-text reject, 40000-char cap | Done | 1769160 |
+| 4 | `buildVoiceRequest`: voice_id in URL path, body `{text, model_id, seed?}`, default `eleven_multilingual_v2`, WAV allowed | Done | 1769160 |
+| 5 | `runVoicesList` → `GET /v2/voices` with `responseType: 'json'`, `include_total_count=false`, `page_size=100` | Done | 1769160 |
+| 6 | `fetchAllVoices`: paginate via `next_page_token` until `has_more:false` | Done | 1769160 |
+| 7 | Atomic cache write (`.tmp` + `renameSync`) at `.audiogen-voices.json` with 24h TTL | Done | 1769160 |
+| 8 | Corrupt-cache silent refetch | Done | 1769160 |
+| 9 | Filters: query (name substring), accent, gender, language, category; `--limit N`; `--refresh` | Done | 1769160 |
+| 10 | History record on voice: `phase:'voice'`, voice_id, voice_name?, text, model_id, format, path | Done | 1769160 |
+| 11 | `tests/voice.test.js` — 33 tests (resolution, validation, URL/body, auto-versioning, shadow warning) | Done | 1769160 |
+| 12 | `tests/voices.test.js` — 32 tests (pagination, atomic cache, corrupt refetch, TTL, filters, --limit, dry-run no-touch) | Done | 1769160 |
+
+### Verification
+
+- Unit suite: **142 pass / 0 fail** (65 new)
+- Full gate: exit 0
+- Architectural-lock spot-checks (6): all PASS — binary/json `responseType` branching correct, `include_total_count=false` present, validation pre-network, atomic cache write uses `renameSync`, voice-id resolution trims-then-cache-first
+- AC checklist: all items PASS
+- Test-coverage spot-check: 4/4 real assertions (no `t.todo` / `t.skip` / `ok(true)`)
+- Verifier: fresh agent (sonnet), not the implementer
+
+---
+
 ## Phase — 2 Music generator
 
 **Plan:** plans/audiogen-skill.md
