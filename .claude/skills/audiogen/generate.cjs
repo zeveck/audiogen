@@ -278,6 +278,7 @@ const FLAG_SPECS = {
   '--json': { value: false, key: 'json' },
   '--refresh': { value: false, key: 'refresh' },
   '--page-size': { value: true, key: 'pageSize' },
+  '--limit': { value: true, key: 'limit' },
 };
 
 /**
@@ -403,6 +404,7 @@ Voices-only:
   --json                     Emit raw JSON instead of table.
   --refresh                  Ignore cache, re-fetch.
   --page-size N              Override pagination page size (default 100, max 100).
+  --limit N                  Cap table output rows (default 50, JSON ignores).
 `;
 
 function printHelp() {
@@ -813,14 +815,637 @@ async function runMusic(parsed, deps = {}) {
   return { url, body, outputPath, dryRun: false, result };
 }
 
-async function runTTS(_parsed) {
-  throw new Error('not yet implemented');
+// ────────────────────────────────────────────────────────────────────
+// Voice (TTS) subcommand
+// ────────────────────────────────────────────────────────────────────
+
+const VOICE_ID_RE = /^[A-Za-z0-9]{20}$/;
+const VOICE_TEXT_MAX_LEN = 40000;
+const VOICE_DEFAULT_MODEL_ID = 'eleven_multilingual_v2';
+const VOICE_DEFAULT_OUTPUT_FORMAT = 'mp3_44100_128';
+
+// Voice accepts any of the standard audio output-format families, including WAV.
+const VOICE_OUTPUT_FORMAT_RE =
+  /^(mp3_\d+_\d+|pcm_\d+|opus_\d+_\d+|ulaw_\d+|alaw_\d+|wav_\d+)$/;
+
+/**
+ * Resolve a `--voice` / `--voice-id` input to a concrete ElevenLabs
+ * voice_id. Cache-first lookup by name (case-insensitive exact match),
+ * then ID passthrough.
+ *
+ * Throws {code, message, matches?} — callers translate to fail() or warn.
+ * On success, returns `{ voiceId, voiceName, shadowWarning? }`.
+ *
+ *   rawInput      - user input (trimmed inside).
+ *   cachePath     - absolute path to `.audiogen-voices.json`.
+ *   readFileFn    - injectable fs.readFileSync (defaults to real fs).
+ *   existsFn      - injectable fs.existsSync.
+ *
+ * Spec:
+ *   0. input = rawInput.trim()
+ *   1. undefined/empty → fail "Voice generation requires --voice-id…"
+ *   2. If cache missing AND not a plausible voice-id (/^[A-Za-z0-9]{20}$/)
+ *      → fail "No voice cache. Run: node generate.cjs voices"
+ *   3. If cache readable, find voices whose name equals input
+ *      (case-insensitive):
+ *       - 1 match → return its voice_id. If input also matches ID regex,
+ *         include a `shadowWarning` describing the cache-first
+ *         precedence.
+ *       - multiple matches → fail with disambiguation block.
+ *       - 0 matches → step 4.
+ *   4. If input matches ID regex → return input verbatim.
+ *      Else → fail "No voice named '<input>' in cache…"
+ */
+function resolveVoiceId(rawInput, cachePath, deps = {}) {
+  const readFileFn = deps.readFileFn || ((p) => fs.readFileSync(p, 'utf8'));
+  const existsFn = deps.existsFn || ((p) => fs.existsSync(p));
+
+  const input = typeof rawInput === 'string' ? rawInput.trim() : '';
+  if (!input) {
+    const err = new Error(
+      'Voice generation requires --voice-id. Browse: node generate.cjs voices [query]'
+    );
+    err.code = 'VOICE_ID_REQUIRED';
+    throw err;
+  }
+
+  let cache = null;
+  if (existsFn(cachePath)) {
+    let raw;
+    try {
+      raw = readFileFn(cachePath);
+    } catch (_e) {
+      raw = null;
+    }
+    if (raw != null) {
+      try {
+        cache = JSON.parse(raw);
+      } catch (_e) {
+        cache = null;
+      }
+    }
+  }
+
+  const isIdPattern = VOICE_ID_RE.test(input);
+
+  if (!cache || !Array.isArray(cache.voices)) {
+    if (!isIdPattern) {
+      const err = new Error('No voice cache. Run: node generate.cjs voices');
+      err.code = 'NO_CACHE';
+      throw err;
+    }
+    // cache missing + ID passthrough
+    return { voiceId: input, voiceName: undefined };
+  }
+
+  const lower = input.toLowerCase();
+  const matches = cache.voices.filter(
+    (v) => v && typeof v.name === 'string' && v.name.toLowerCase() === lower
+  );
+
+  if (matches.length === 1) {
+    const hit = matches[0];
+    const out = { voiceId: hit.voice_id, voiceName: hit.name };
+    if (isIdPattern) {
+      out.shadowWarning =
+        `audiogen: '${input}' matches both a voice-id pattern and a cached voice name; ` +
+        `resolving as the cached name's voice_id. If you intended the raw ID, rename the ` +
+        `conflicting voice or pass a different voice.`;
+    }
+    return out;
+  }
+
+  if (matches.length > 1) {
+    const err = new Error(
+      `Multiple cached voices named "${input}". Pass the ID directly: --voice-id <id>`
+    );
+    err.code = 'DISAMBIGUATION';
+    err.matches = matches.map((v) => ({
+      voice_id: v.voice_id,
+      name: v.name,
+      category: v.category,
+      labels: v.labels || {},
+    }));
+    throw err;
+  }
+
+  // zero name matches
+  if (isIdPattern) {
+    return { voiceId: input, voiceName: undefined };
+  }
+  const err = new Error(
+    `No voice named '${input}' in cache and input is not a 20-char voice-id. Try --refresh.`
+  );
+  err.code = 'NO_MATCH';
+  throw err;
 }
+
+/**
+ * Validate and normalize voice-subcommand options. Uses fail() on any
+ * pre-network error.
+ *
+ * Returns:
+ *   { text, voiceId, voiceName?, shadowWarning?, outputFormat, modelId,
+ *     languageCode?, voiceSettings?, seed?, rawVoiceInput }
+ */
+function validateVoiceOptions(parsed, deps = {}) {
+  const { flags, positionals } = parsed;
+
+  // Output format: default mp3; WAV allowed for voice.
+  const outputFormat = flags.outputFormat || VOICE_DEFAULT_OUTPUT_FORMAT;
+  if (!VOICE_OUTPUT_FORMAT_RE.test(outputFormat)) {
+    fail(
+      `invalid --output-format "${outputFormat}" for voice. Expected mp3_<rate>_<br>, pcm_<rate>, wav_<rate>, opus_<rate>_<br>, ulaw_<rate>, or alaw_<rate>.`
+    );
+  }
+
+  // Text: join positionals, trim, enforce length cap.
+  const text = positionals.join(' ').trim();
+  if (text.length === 0) {
+    fail('voice subcommand requires non-empty text.');
+  }
+  if (text.length > VOICE_TEXT_MAX_LEN) {
+    fail(
+      `voice text is ${text.length} chars; max is ${VOICE_TEXT_MAX_LEN}. Split into smaller requests.`
+    );
+  }
+
+  // Voice id/name resolution.
+  const rawVoiceInput = flags.voiceId;
+  const cachePath = deps.cachePath || path.join(process.cwd(), '.audiogen-voices.json');
+  let resolved;
+  try {
+    resolved = resolveVoiceId(rawVoiceInput, cachePath, deps.resolveDeps);
+  } catch (e) {
+    if (e && e.code === 'DISAMBIGUATION') {
+      const details = {};
+      for (const m of e.matches || []) {
+        const lbl = m.labels || {};
+        const lblParts = [];
+        if (lbl.accent) lblParts.push(`accent=${lbl.accent}`);
+        if (lbl.gender) lblParts.push(`gender=${lbl.gender}`);
+        if (lbl.age) lblParts.push(`age=${lbl.age}`);
+        if (lbl.language) lblParts.push(`language=${lbl.language}`);
+        const cat = m.category ? ` [${m.category}]` : '';
+        const labelSuffix = lblParts.length ? `  (${lblParts.join(', ')})` : '';
+        details[m.voice_id] = `${m.name}${cat}${labelSuffix}`;
+      }
+      fail(e.message, details);
+    }
+    fail(e && e.message ? e.message : String(e));
+  }
+
+  // Optional integer seed.
+  let seed;
+  if (flags.seed !== undefined) {
+    const raw = String(flags.seed);
+    if (!/^-?\d+$/.test(raw)) {
+      fail(`--seed must be an integer; got "${flags.seed}".`);
+    }
+    seed = Number(raw);
+    if (!Number.isFinite(seed)) {
+      fail(`--seed must be an integer; got "${flags.seed}".`);
+    }
+  }
+
+  // Voice settings (only user-specified fields).
+  const vs = {};
+  const numericFlag = (flag, key, min, max) => {
+    if (flags[flag] === undefined) return;
+    const n = Number(flags[flag]);
+    if (!Number.isFinite(n)) {
+      fail(`--${flag.replace(/([A-Z])/g, '-$1').toLowerCase()} must be a number; got "${flags[flag]}".`);
+    }
+    if (n < min || n > max) {
+      fail(`--${flag.replace(/([A-Z])/g, '-$1').toLowerCase()} must be in [${min}, ${max}]; got ${n}.`);
+    }
+    vs[key] = n;
+  };
+  numericFlag('stability', 'stability', 0, 1);
+  numericFlag('similarityBoost', 'similarity_boost', 0, 1);
+  numericFlag('style', 'style', 0, 1);
+  numericFlag('speed', 'speed', 0.5, 2);
+
+  const modelId = flags.modelId || VOICE_DEFAULT_MODEL_ID;
+
+  const out = {
+    text,
+    voiceId: resolved.voiceId,
+    voiceName: resolved.voiceName,
+    shadowWarning: resolved.shadowWarning,
+    outputFormat,
+    modelId,
+    rawVoiceInput: typeof rawVoiceInput === 'string' ? rawVoiceInput.trim() : rawVoiceInput,
+  };
+  if (flags.languageCode) out.languageCode = flags.languageCode;
+  if (Object.keys(vs).length > 0) out.voiceSettings = vs;
+  if (seed !== undefined) out.seed = seed;
+  return out;
+}
+
+/**
+ * Build the voice TTS request URL + body. Pure function.
+ */
+function buildVoiceRequest(opts) {
+  const url =
+    `${BASE_URL}/v1/text-to-speech/${encodeURIComponent(opts.voiceId)}` +
+    `?output_format=${encodeURIComponent(opts.outputFormat)}`;
+  const body = {
+    text: opts.text,
+    model_id: opts.modelId,
+  };
+  if (opts.languageCode) body.language_code = opts.languageCode;
+  if (opts.voiceSettings) body.voice_settings = opts.voiceSettings;
+  if (opts.seed !== undefined) body.seed = opts.seed;
+  return { url, body };
+}
+
+async function runTTS(parsed, deps = {}) {
+  const {
+    fetchImpl,
+    appendHistoryFn = appendHistory,
+    writeHistoryFn,
+    stdout = process.stdout,
+    stderr = process.stderr,
+    cachePath,
+    resolveDeps,
+  } = deps;
+
+  const opts = validateVoiceOptions(parsed, { cachePath, resolveDeps });
+
+  if (opts.shadowWarning) {
+    stderr.write(`${opts.shadowWarning}\n`);
+  }
+
+  const { url, body } = buildVoiceRequest(opts);
+
+  const { flags } = parsed;
+  const outputPath = resolveOutputPath({
+    type: 'voice',
+    prompt: opts.text,
+    outputOption: flags.output,
+    outputFormat: opts.outputFormat,
+    force: !!flags.force,
+    tz: 'America/New_York',
+  });
+
+  if (flags.dryRun) {
+    stdout.write('audiogen dry-run (voice)\n');
+    stdout.write(`  url: ${url}\n`);
+    stdout.write(`  body: ${JSON.stringify(body)}\n`);
+    stdout.write(`  output: ${outputPath}\n`);
+    return { url, body, outputPath, dryRun: true };
+  }
+
+  const callOpts = {
+    method: 'POST',
+    path: `/v1/text-to-speech/${encodeURIComponent(opts.voiceId)}`,
+    query: { output_format: opts.outputFormat },
+    body,
+    outputPath,
+    responseType: 'binary',
+  };
+  if (fetchImpl) callOpts.fetchImpl = fetchImpl;
+
+  const result = await callElevenLabs(callOpts);
+
+  const record = {
+    ts: new Date().toISOString(),
+    type: 'voice',
+    phase: 'voice',
+    voice_id: opts.voiceId,
+    text: opts.text,
+    model_id: opts.modelId,
+    output_format: opts.outputFormat,
+    output_path: outputPath,
+  };
+  if (opts.voiceName) record.voice_name = opts.voiceName;
+  if (opts.languageCode) record.language_code = opts.languageCode;
+  if (opts.voiceSettings) record.voice_settings = opts.voiceSettings;
+  if (opts.seed !== undefined) record.seed = opts.seed;
+  if (flags.historyId) record.history_id = flags.historyId;
+  if (flags.historyParent) record.parent_id = flags.historyParent;
+  if (result && result.requestId) record.request_id = result.requestId;
+  if (result && result.bytesWritten) record.bytes = result.bytesWritten;
+
+  if (writeHistoryFn) {
+    appendHistoryFn(record, writeHistoryFn);
+  } else {
+    appendHistoryFn(record);
+  }
+
+  stdout.write(`${outputPath}\n`);
+  return { url, body, outputPath, dryRun: false, result };
+}
+
 async function runSFX(_parsed) {
   throw new Error('not yet implemented');
 }
-async function runVoicesList(_parsed) {
-  throw new Error('not yet implemented');
+
+// ────────────────────────────────────────────────────────────────────
+// Voices (catalog list) subcommand
+// ────────────────────────────────────────────────────────────────────
+
+const VOICES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const VOICES_CACHE_FILENAME = '.audiogen-voices.json';
+const VOICES_CACHE_TMP_FILENAME = '.audiogen-voices.json.tmp';
+const VOICES_TABLE_ROW_CAP = 50;
+const VOICES_PAGE_SIZE_DEFAULT = 100;
+
+/**
+ * Fetch the full voice catalog from v2/voices, paginating until
+ * `has_more: false` (or `next_page_token` absent). Accumulates into
+ * a single array.
+ *
+ * Returns the concatenated voices array. Uses
+ * `callElevenLabs({ responseType: 'json' })`.
+ */
+async function fetchAllVoices({ pageSize, fetchImpl } = {}) {
+  const limit = pageSize || VOICES_PAGE_SIZE_DEFAULT;
+  const out = [];
+  let nextPageToken = null;
+  // Safety rail: 1000 pages * 100 voices = 100k voices — far above reality.
+  for (let i = 0; i < 1000; i++) {
+    const query = {
+      page_size: String(limit),
+      include_total_count: 'false',
+    };
+    if (nextPageToken) query.next_page_token = nextPageToken;
+
+    const callOpts = {
+      method: 'GET',
+      path: '/v2/voices',
+      query,
+      responseType: 'json',
+    };
+    if (fetchImpl) callOpts.fetchImpl = fetchImpl;
+    const { json } = await callElevenLabs(callOpts);
+
+    if (json && Array.isArray(json.voices)) {
+      for (const v of json.voices) out.push(v);
+    }
+
+    const hasMore = !!(json && json.has_more);
+    const token = json && json.next_page_token;
+    if (!hasMore || !token) break;
+    nextPageToken = token;
+  }
+  return out;
+}
+
+/**
+ * Read + parse the cache file. Returns {voices, fetched_at, mtimeMs} on
+ * success. On any error (missing, unreadable, JSON parse fail), returns
+ * null. When the file exists but parses invalid, writes a stderr warning
+ * via `onParseError(path)`.
+ */
+function readVoicesCache(cachePath, { onParseError } = {}) {
+  if (!fs.existsSync(cachePath)) return null;
+  let stat;
+  try {
+    stat = fs.statSync(cachePath);
+  } catch (_e) {
+    return null;
+  }
+  let raw;
+  try {
+    raw = fs.readFileSync(cachePath, 'utf8');
+  } catch (_e) {
+    return null;
+  }
+  let obj;
+  try {
+    obj = JSON.parse(raw);
+  } catch (_e) {
+    if (onParseError) onParseError(cachePath);
+    return null;
+  }
+  if (!obj || !Array.isArray(obj.voices)) return null;
+  return {
+    voices: obj.voices,
+    fetched_at: obj.fetched_at,
+    mtimeMs: stat.mtimeMs,
+  };
+}
+
+/**
+ * Atomic cache write: write to `.audiogen-voices.json.tmp`, then rename
+ * over `.audiogen-voices.json`. Returns the final cache path on success.
+ */
+function writeVoicesCache(cachePath, voices, { now } = {}) {
+  const dir = path.dirname(cachePath);
+  const tmp = path.join(dir, VOICES_CACHE_TMP_FILENAME);
+  const payload = {
+    fetched_at: (now || new Date()).toISOString(),
+    voices,
+  };
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(tmp, JSON.stringify(payload, null, 2));
+  fs.renameSync(tmp, cachePath);
+  return cachePath;
+}
+
+function matchesSubstring(haystack, needle) {
+  if (haystack == null) return false;
+  return String(haystack).toLowerCase().includes(String(needle).toLowerCase());
+}
+
+/**
+ * Filter voices client-side. All filters are optional. An absent label
+ * field yields no-match for that specific filter; if no filters are
+ * active, every voice is retained.
+ */
+function filterVoices(voices, { query, language, gender, accent, category }) {
+  return voices.filter((v) => {
+    if (!v || typeof v !== 'object') return false;
+    const labels = v.labels || {};
+
+    if (query) {
+      const q = String(query).toLowerCase();
+      let matched = false;
+      if (typeof v.name === 'string' && v.name.toLowerCase().includes(q)) matched = true;
+      if (!matched) {
+        for (const val of Object.values(labels)) {
+          if (typeof val === 'string' && val.toLowerCase().includes(q)) {
+            matched = true;
+            break;
+          }
+        }
+      }
+      if (!matched) return false;
+    }
+
+    if (language) {
+      const candidates = [];
+      if (typeof labels.language === 'string') candidates.push(labels.language);
+      if (v.fine_tuning && typeof v.fine_tuning.language === 'string') {
+        candidates.push(v.fine_tuning.language);
+      }
+      if (Array.isArray(v.verified_languages)) {
+        for (const vl of v.verified_languages) {
+          if (vl && typeof vl.language === 'string') candidates.push(vl.language);
+        }
+      }
+      const lang = String(language).toLowerCase();
+      if (!candidates.some((c) => c.toLowerCase().includes(lang))) return false;
+    }
+
+    if (gender) {
+      if (typeof labels.gender !== 'string') return false;
+      if (labels.gender.toLowerCase() !== String(gender).toLowerCase()) return false;
+    }
+
+    if (accent) {
+      if (!matchesSubstring(labels.accent, accent)) return false;
+    }
+
+    if (category) {
+      if (typeof v.category !== 'string') return false;
+      if (v.category !== category) return false;
+    }
+
+    return true;
+  });
+}
+
+function padRight(s, n) {
+  s = s == null ? '' : String(s);
+  if (s.length >= n) return s.slice(0, n);
+  return s + ' '.repeat(n - s.length);
+}
+
+function formatVoicesTable(voices, { rowCap = VOICES_TABLE_ROW_CAP } = {}) {
+  // Sort alphabetically by name for deterministic output.
+  const sorted = voices
+    .slice()
+    .sort((a, b) => {
+      const an = (a && a.name) || '';
+      const bn = (b && b.name) || '';
+      return an.localeCompare(bn);
+    });
+  const truncated = sorted.slice(0, rowCap);
+  const overflow = sorted.length - truncated.length;
+
+  const cols = [
+    { key: 'name', header: 'NAME', width: 24 },
+    { key: 'voice_id', header: 'ID', width: 22 },
+    { key: 'category', header: 'CATEGORY', width: 14 },
+    { key: 'language', header: 'LANG', width: 10 },
+    { key: 'gender', header: 'GENDER', width: 8 },
+    { key: 'accent', header: 'ACCENT', width: 14 },
+    { key: 'preview', header: 'PREVIEW', width: 40 },
+  ];
+
+  const rowFor = (v) => {
+    const labels = (v && v.labels) || {};
+    return {
+      name: v && v.name,
+      voice_id: v && v.voice_id,
+      category: v && v.category,
+      language:
+        (labels && labels.language) ||
+        (v && v.fine_tuning && v.fine_tuning.language) ||
+        '',
+      gender: labels && labels.gender,
+      accent: labels && labels.accent,
+      preview: v && v.preview_url,
+    };
+  };
+
+  const lines = [];
+  lines.push(cols.map((c) => padRight(c.header, c.width)).join(' '));
+  for (const v of truncated) {
+    const row = rowFor(v);
+    lines.push(cols.map((c) => padRight(row[c.key], c.width)).join(' '));
+  }
+  if (overflow > 0) {
+    lines.push(`(+${overflow} more — refine query or use --json)`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+async function runVoicesList(parsed, deps = {}) {
+  const {
+    fetchImpl,
+    stdout = process.stdout,
+    stderr = process.stderr,
+    cachePath = path.join(process.cwd(), VOICES_CACHE_FILENAME),
+    now = new Date(),
+    ttlMs = VOICES_CACHE_TTL_MS,
+  } = deps;
+
+  const { flags, positionals } = parsed;
+  const query = positionals.join(' ').trim();
+
+  // --page-size: integer in [1, 100]; default 100.
+  let pageSize = VOICES_PAGE_SIZE_DEFAULT;
+  if (flags.pageSize !== undefined) {
+    const raw = String(flags.pageSize);
+    if (!/^\d+$/.test(raw)) {
+      fail(`--page-size must be an integer; got "${flags.pageSize}".`);
+    }
+    pageSize = Number(raw);
+    if (pageSize < 1 || pageSize > 100) {
+      fail(`--page-size must be in [1, 100]; got ${pageSize}.`);
+    }
+  }
+
+  const filterSpec = {
+    query: query || undefined,
+    language: flags.language,
+    gender: flags.gender,
+    accent: flags.accent,
+    category: flags.category,
+  };
+
+  if (flags.dryRun) {
+    const q = {
+      page_size: String(pageSize),
+      include_total_count: 'false',
+    };
+    const qs = Object.entries(q)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join('&');
+    const url = `${BASE_URL}/v2/voices?${qs}`;
+    stdout.write('audiogen dry-run (voices)\n');
+    stdout.write(`  url: ${url}\n`);
+    stdout.write(`  page_size: ${pageSize}\n`);
+    stdout.write(`  filters: ${JSON.stringify(filterSpec)}\n`);
+    stdout.write(`  cache: ${cachePath}\n`);
+    return { url, pageSize, filters: filterSpec, dryRun: true };
+  }
+
+  let voices = null;
+  const cache = readVoicesCache(cachePath, {
+    onParseError: (p) =>
+      stderr.write(`audiogen: cache parse error at ${p}; refetching\n`),
+  });
+  const cacheFresh =
+    cache &&
+    typeof cache.mtimeMs === 'number' &&
+    now.getTime() - cache.mtimeMs < ttlMs;
+
+  if (cache && cacheFresh && !flags.refresh) {
+    voices = cache.voices;
+  } else {
+    voices = await fetchAllVoices({ pageSize, fetchImpl });
+    writeVoicesCache(cachePath, voices, { now });
+  }
+
+  const filtered = filterVoices(voices, filterSpec);
+
+  if (flags.json) {
+    stdout.write(JSON.stringify(filtered) + '\n');
+    return { voices: filtered, dryRun: false, cacheHit: !!cache && cacheFresh && !flags.refresh };
+  }
+
+  const rowCap = flags.limit ? Math.max(1, Number(flags.limit)) : VOICES_TABLE_ROW_CAP;
+  stdout.write(formatVoicesTable(filtered, { rowCap }));
+  return {
+    voices: filtered,
+    dryRun: false,
+    cacheHit: !!cache && cacheFresh && !flags.refresh,
+  };
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -862,30 +1487,38 @@ async function main(argv) {
     return;
   }
 
+  // Voice: routes through runTTS (pre-network validation + dry-run + live).
+  if (subcommand === 'voice') {
+    try {
+      if (!flags.dryRun) assertApiKey();
+      await runTTS(parsed);
+    } catch (e) {
+      fail(e && e.message ? e.message : String(e));
+    }
+    return;
+  }
+
+  // Voices: routes through runVoicesList. Dry-run does not fetch or touch
+  // the cache; live uses the cache-TTL path.
+  if (subcommand === 'voices') {
+    try {
+      if (!flags.dryRun) assertApiKey();
+      await runVoicesList(parsed);
+    } catch (e) {
+      fail(e && e.message ? e.message : String(e));
+    }
+    return;
+  }
+
   if (flags.dryRun) {
-    // Print a dry-run block for voice/sfx/voices. Phases 3-4 will replace
-    // these branches with per-subcommand dry-run paths analogous to music.
+    // Only sfx still uses the generic dry-run block; phase 4 replaces it.
     const outputFormat = flags.outputFormat || 'mp3_44100_128';
     const prompt = parsed.positionals.join(' ');
     let url = '';
     let requestBody = {};
     const tz = 'America/New_York';
 
-    if (subcommand === 'voice') {
-      const voiceId = flags.voiceId || '<voice-id>';
-      url = `${BASE_URL}/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${encodeURIComponent(outputFormat)}`;
-      requestBody = { text: prompt };
-      if (flags.modelId) requestBody.model_id = flags.modelId;
-      if (flags.languageCode) requestBody.language_code = flags.languageCode;
-      const vs = {};
-      if (flags.stability !== undefined) vs.stability = Number(flags.stability);
-      if (flags.similarityBoost !== undefined)
-        vs.similarity_boost = Number(flags.similarityBoost);
-      if (flags.style !== undefined) vs.style = Number(flags.style);
-      if (flags.speed !== undefined) vs.speed = Number(flags.speed);
-      if (Object.keys(vs).length > 0) requestBody.voice_settings = vs;
-      if (flags.seed !== undefined) requestBody.seed = Number(flags.seed);
-    } else if (subcommand === 'sfx') {
+    if (subcommand === 'sfx') {
       url = `${BASE_URL}/v1/sound-generation?output_format=${encodeURIComponent(outputFormat)}`;
       requestBody = { text: prompt };
       if (flags.duration !== undefined)
@@ -894,57 +1527,32 @@ async function main(argv) {
         requestBody.prompt_influence = Number(flags.promptInfluence);
       if (flags.loop) requestBody.loop = true;
       if (flags.modelId) requestBody.model_id = flags.modelId;
-    } else if (subcommand === 'voices') {
-      const q = {};
-      if (prompt) q.search = prompt;
-      if (flags.language) q.language = flags.language;
-      if (flags.gender) q.gender = flags.gender;
-      if (flags.accent) q.accent = flags.accent;
-      if (flags.category) q.category = flags.category;
-      q.page_size = String(flags.pageSize ? Math.min(100, Number(flags.pageSize)) : 100);
-      const qs = Object.keys(q).length
-        ? '?' +
-          Object.entries(q)
-            .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-            .join('&')
-        : '';
-      url = `${BASE_URL}/v2/voices${qs}`;
-      requestBody = null; // GET, no body
     }
 
-    let outputPath = null;
-    if (subcommand !== 'voices') {
-      outputPath = resolveOutputPath({
-        type: subcommand,
-        prompt,
-        outputOption: flags.output,
-        outputFormat,
-        force: !!flags.force,
-        tz,
-      });
-    }
+    const outputPath = resolveOutputPath({
+      type: subcommand,
+      prompt,
+      outputOption: flags.output,
+      outputFormat,
+      force: !!flags.force,
+      tz,
+    });
 
     // Human-readable block. No fs mutations, no mkdir, no writes.
     process.stdout.write(`audiogen dry-run (${subcommand})\n`);
     process.stdout.write(`  url: ${url}\n`);
-    if (requestBody !== null) {
-      process.stdout.write(`  body: ${JSON.stringify(requestBody)}\n`);
-    } else {
-      process.stdout.write(`  body: (GET)\n`);
-    }
+    process.stdout.write(`  body: ${JSON.stringify(requestBody)}\n`);
     if (outputPath) {
       process.stdout.write(`  output: ${outputPath}\n`);
     }
     process.exit(0);
   }
 
-  // Live run — ensure API key and dispatch to subcommand stub.
-  // (music is handled earlier in its own path.)
+  // Live run — ensure API key and dispatch to remaining subcommand stubs.
+  // (music, voice, voices are handled earlier in their own paths.)
   assertApiKey();
   try {
-    if (subcommand === 'voice') await runTTS(parsed);
-    else if (subcommand === 'sfx') await runSFX(parsed);
-    else if (subcommand === 'voices') await runVoicesList(parsed);
+    if (subcommand === 'sfx') await runSFX(parsed);
   } catch (e) {
     fail(e && e.message ? e.message : String(e));
   }
@@ -988,10 +1596,30 @@ module.exports = {
   MUSIC_LENGTH_DEFAULT_MS,
   MUSIC_LOOP_REJECT_MSG,
   MUSIC_WAV_REJECT_MSG,
-  // other subcommand stubs
+  // voice subcommand
   runTTS,
-  runSFX,
+  resolveVoiceId,
+  validateVoiceOptions,
+  buildVoiceRequest,
+  VOICE_ID_RE,
+  VOICE_TEXT_MAX_LEN,
+  VOICE_DEFAULT_MODEL_ID,
+  VOICE_DEFAULT_OUTPUT_FORMAT,
+  VOICE_OUTPUT_FORMAT_RE,
+  // voices subcommand
   runVoicesList,
+  fetchAllVoices,
+  readVoicesCache,
+  writeVoicesCache,
+  filterVoices,
+  formatVoicesTable,
+  VOICES_CACHE_FILENAME,
+  VOICES_CACHE_TMP_FILENAME,
+  VOICES_CACHE_TTL_MS,
+  VOICES_PAGE_SIZE_DEFAULT,
+  VOICES_TABLE_ROW_CAP,
+  // other subcommand stubs
+  runSFX,
   // main (for integration tests)
   main,
 };
