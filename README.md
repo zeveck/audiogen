@@ -56,29 +56,24 @@ you describe, the skill figures out the call.
 
 ## Install
 
-Drops three files into `.claude/skills/audiogen/` in any project.
+You can probably just **ask your agent**: "install the audiogen skill
+from `github.com/zeveck/audiogen` into this project." It will follow
+the manual steps below.
 
-### Option 1 — let your agent do it
-
-> Install the audiogen skill from `github.com/zeveck/audiogen` into this project.
-
-Your Claude Code agent fetches the files, sets up the directory, and
-checks that Node ≥ 20.14 is available. Easiest path.
-
-### Option 2 — three curls
+To do it yourself, three files into `.claude/skills/audiogen/`:
 
 ```bash
 mkdir -p .claude/skills/audiogen
-for f in SKILL.md generate.cjs reference.md; do
-  curl -fsSL "https://raw.githubusercontent.com/zeveck/audiogen/main/.claude/skills/audiogen/$f" \
-    -o ".claude/skills/audiogen/$f"
-done
+cd .claude/skills/audiogen
+curl -O https://raw.githubusercontent.com/zeveck/audiogen/main/.claude/skills/audiogen/SKILL.md
+curl -O https://raw.githubusercontent.com/zeveck/audiogen/main/.claude/skills/audiogen/generate.cjs
+curl -O https://raw.githubusercontent.com/zeveck/audiogen/main/.claude/skills/audiogen/reference.md
 ```
 
-### Option 3 — local copy (when you've cloned this repo)
+Confirm:
 
 ```bash
-cp -r /path/to/audiogen/.claude/skills/audiogen <your-project>/.claude/skills/
+node .claude/skills/audiogen/generate.cjs --help
 ```
 
 ---
