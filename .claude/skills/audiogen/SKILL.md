@@ -2,8 +2,8 @@
 name: audiogen
 description: Generate game audio (music, voices, sound effects) via ElevenLabs.
 disable-model-invocation: false
-allowed-tools: Bash(node */generate.cjs *)
-argument-hint: <music|voice|sfx|voices> <description> [--voice-id ID] [--length-ms MS] [--duration SEC] [--output PATH]
+allowed-tools: "Bash(node */generate.cjs *)"
+argument-hint: "<music|voice|sfx|voices> <description> [--voice-id ID] [--length-ms MS] [--duration SEC] [--output PATH]"
 ---
 
 # /audiogen — Game Audio Generation via ElevenLabs
