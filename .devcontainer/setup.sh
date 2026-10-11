@@ -1,37 +1,73 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Docker creates fresh named-volume mount points (and missing parents such as
+# ~/.config) owned by root. Hand them to the container user before anything
+# writes there. Non-recursive: on later rebuilds the contents are already ours.
+echo "📂 Preparing persisted agent folders..."
+for dir in "$HOME/.config" "$HOME/.config/gh" "$HOME/.claude" "$HOME/.codex" "$HOME/.gemini"; do
+  sudo mkdir -p "$dir"
+  sudo chown "$(id -u):$(id -g)" "$dir"
+done
+
 # Install Claude Code CLI (native installer).
 echo "🤖 Installing Claude Code..."
 curl -fsSL https://claude.ai/install.sh | bash
 export PATH="$HOME/.local/bin:$PATH"
 
+# ── npm registry (optional) ──────────────────────────────────────────────────
+if [ -n "${NPM_REGISTRY:-}" ]; then
+  echo "Configuring npm registry: $NPM_REGISTRY"
+  npm config set registry "$NPM_REGISTRY"
+fi
+
 # Install GPT-5 Codex CLI.
-echo "🧠 Installing GPT5 Codex..."
+echo "🧠 Installing GPT-5 Codex..."
 npm install -g @openai/codex@latest
 
 # Install Gemini CLI.
 echo "✨ Installing Gemini CLI..."
 npm install -g @google/gemini-cli@latest
 
-# Install Chrome with OS-level dependencies for Docker.
-# playwright-cli install handles browser binaries but NOT OS deps (libgbm, libnss3, etc).
-# Remove Yarn repo with expired GPG key (from base image) to avoid apt failures.
-echo "🎭 Installing Chrome with OS dependencies..."
-sudo rm -f /etc/apt/sources.list.d/yarn.list 2>/dev/null || true
-PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npx -y playwright@latest install --with-deps chrome
+# Install the GitLab CLI (glab).
+# gh comes from the github-cli devcontainer feature, but glab has no official
+# feature, so fetch the release binary directly. The version is resolved at build
+# time rather than pinned, and the architecture comes from dpkg, so this works on
+# both x86_64 and ARM (Apple Silicon) containers.
+#
+# Non-fatal on purpose: glab is a convenience, and gitlab.com may be unreachable
+# on restricted networks. A failure here should not cost you the agents and
+# browser stack that are the point of this container.
+echo "🦊 Installing GitLab CLI (glab)..."
+if ! (
+  set -e
+  GLAB_ARCH="$(dpkg --print-architecture)"
+  GLAB_URL="$(curl -fsSL --max-time 30 \
+    'https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases?per_page=1' \
+    | python3 -c "import json,sys;d=json.load(sys.stdin)[0];print(next(l['url'] for l in d['assets']['links'] if l['name'].endswith('linux_${GLAB_ARCH}.tar.gz')))")"
+  curl -fsSL --max-time 180 "$GLAB_URL" -o /tmp/glab.tar.gz
+  # No --strip-components: the tarball's bin/glab must land in /usr/local/bin.
+  sudo tar -xzf /tmp/glab.tar.gz -C /usr/local bin/glab
+  rm -f /tmp/glab.tar.gz
+); then
+  echo "⚠️  glab install failed (network or upstream change) — continuing without it."
+fi
 
-# Clean up any stale MCP config from previous setups.
-echo "🧹 Cleaning up stale configs..."
-rm -f .mcp.json
-rm -f .playwright-mcp.json
+# Put the auth helper on PATH so `auth` works from anywhere in the container.
+# Symlinked rather than copied so edits to the repo copy take effect immediately.
+# chmod first: exec bits are committed, but common transports strip them --
+# raw-file downloads, some ZIP extractors, and any Windows filesystem hop --
+# so restore them rather than trust the copy arrived intact.
+echo "🔑 Installing auth helper..."
+chmod +x .devcontainer/auth .devcontainer/dc 2>/dev/null || true
+sudo ln -sf "$(pwd)/.devcontainer/auth" /usr/local/bin/auth
 
 # Install Playwright CLI globally.
 echo "🔧 Installing Playwright CLI..."
 npm install -g @playwright/cli@latest
 
 # Write Playwright CLI config to the default discovery path (.playwright/cli.config.json).
-# --no-sandbox is required because Chrome's sandbox needs CAP_SYS_ADMIN which Docker
+# --no-sandbox is required because Chromium's sandbox needs CAP_SYS_ADMIN which Docker
 # containers don't have; the container itself provides isolation.
 # We write this BEFORE `playwright-cli install` so it finds our config and doesn't
 # overwrite it with a default that lacks --no-sandbox.
@@ -42,7 +78,6 @@ cat > .playwright/cli.config.json <<JSON
   "browser": {
     "browserName": "chromium",
     "launchOptions": {
-      "channel": "chrome",
       "headless": true,
       "args": ["--no-sandbox"]
     }
@@ -51,13 +86,36 @@ cat > .playwright/cli.config.json <<JSON
 }
 JSON
 
-# Initialize workspace and install skills.
-# This will:
-#   - Detect the existing .playwright/ directory and our config
-#   - Verify Chrome is installed (it is, from the step above)
-#   - Copy skill files to .claude/skills/playwright-cli/
+# Initialize the workspace and install skills into .claude/skills/playwright-cli/.
+# Browser download is handled explicitly by `install-browser` below, not relied on here
+# (whether `install` also fetches one has varied across releases, and we pin @latest).
 echo "📝 Initializing Playwright CLI workspace and installing skills..."
 playwright-cli install --skills
+
+# Install the browser AND its OS-level dependencies in one step.
+# `install-browser` fetches the exact revision the CLI's bundled playwright-core pins
+# (currently chromium-1224) plus the headless shell and ffmpeg (needed for video
+# recording), and is idempotent. `--with-deps` adds the OS packages Docker lacks
+# (libgbm, libnss3, etc) via apt.
+#
+# Do NOT add a separate `npx playwright install --with-deps chromium` here: stable
+# playwright pins a DIFFERENT revision (1234), so it downloads ~656 MB of browsers
+# that are never launched. PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 does not prevent this —
+# that variable is only read by the npm-postinstall path, not the explicit `install`.
+#
+# We use chromium (not chrome) because it has native ARM Linux builds, so this works
+# on Apple Silicon containers too.
+# Remove Yarn repo with expired GPG key (from base image) to avoid apt failures.
+echo "🌐 Installing Chromium and OS dependencies for Playwright CLI..."
+sudo rm -f /etc/apt/sources.list.d/yarn.list 2>/dev/null || true
+playwright-cli install-browser chromium --with-deps
+
+# Self-check: fail the build LOUDLY if the browser can't actually launch, so any
+# future upstream change to the install flow surfaces here (set -e aborts on the
+# non-zero exit) instead of silently breaking tests/screenshots at runtime.
+echo "🔎 Verifying Chromium launches..."
+playwright-cli open about:blank >/dev/null
+playwright-cli close >/dev/null
 
 # Done.
 echo "✅ Setup complete."
