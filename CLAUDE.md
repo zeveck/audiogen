@@ -2,7 +2,7 @@
 
 ## Architecture
 
-The /audiogen skill lives at `skills/audiogen/` (a Claude Code plugin; see `.claude-plugin/`) as three files — SKILL.md (prompt/prose), generate.cjs (zero-dep Node CLI, dual-shape as skill backend + standalone tool), reference.md (preset library). Tests in `tests/`; helper scripts in `scripts/`; hooks in `.claude/hooks/`.
+The /audiogen skill lives at `skills/audiogen/` (a Claude Code plugin rooted at `skills/`; manifests in `skills/.claude-plugin/` and `.claude-plugin/`) as three files — SKILL.md (prompt/prose), generate.cjs (zero-dep Node CLI, dual-shape as skill backend + standalone tool), reference.md (preset library). Tests in `tests/`; helper scripts in `scripts/`; hooks in `.claude/hooks/`.
 
 ## Dev Server
 

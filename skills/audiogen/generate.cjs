@@ -15,7 +15,7 @@ const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 
 // Release version (CalVer YYYY.M.D, valid semver). Keep in sync with
-// .claude-plugin/plugin.json and the top heading of CHANGELOG.md; a test
+// skills/.claude-plugin/plugin.json and the top heading of CHANGELOG.md; a test
 // enforces this.
 const AUDIOGEN_VERSION = '2026.10.11';
 

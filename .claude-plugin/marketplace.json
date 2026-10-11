@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "audiogen",
-      "source": ".",
+      "source": "./skills",
       "description": "Generate game music, voice lines, and sound effects with ElevenLabs."
     }
   ]

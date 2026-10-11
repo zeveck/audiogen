@@ -5,5 +5,6 @@
   "author": { "name": "zeveck" },
   "homepage": "https://github.com/zeveck/audiogen",
   "repository": "https://github.com/zeveck/audiogen",
-  "keywords": ["audio-generation", "elevenlabs", "game-audio", "music", "text-to-speech", "sound-effects"]
+  "keywords": ["audio-generation", "elevenlabs", "game-audio", "music", "text-to-speech", "sound-effects"],
+  "skills": "./audiogen"
 }

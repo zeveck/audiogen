@@ -166,7 +166,7 @@ node .claude/skills/audiogen/generate.cjs voices --limit 20
 ```
 
 These paths assume the manual install above. With the plugin, the CLI is in
-the plugin cache instead (`~/.claude/plugins/cache/audiogen/audiogen/<version>/skills/audiogen/`); in a
+the plugin cache instead (`~/.claude/plugins/cache/audiogen/audiogen/<version>/audiogen/`); in a
 clone of this repository it is `skills/audiogen/generate.cjs`.
 
 Outputs land under `assets/audio/{music,voice,sfx}/<slug>.mp3` by
@@ -245,8 +245,10 @@ jobs:
 ## Repository Layout
 
 The distributable skill lives in `skills/audiogen/` (`SKILL.md`,
-`generate.cjs`, `reference.md`); `.claude-plugin/` holds the plugin and
-marketplace manifests. Test the plugin locally with `claude --plugin-dir .`.
+`generate.cjs`, `reference.md`). The plugin is rooted at `skills/`, so an
+install copies only the skill: `skills/.claude-plugin/plugin.json` is the
+plugin manifest and `.claude-plugin/marketplace.json` the marketplace. Test
+the plugin locally with `claude --plugin-dir skills`.
 Releases are listed in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Development

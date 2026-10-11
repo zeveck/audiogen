@@ -16,7 +16,7 @@ test('version is date-based CalVer', () => {
 });
 
 test('CLI version matches plugin.json and the first CHANGELOG heading', () => {
-  const plugin = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin/plugin.json'), 'utf8'));
+  const plugin = JSON.parse(fs.readFileSync(path.join(root, 'skills/.claude-plugin/plugin.json'), 'utf8'));
   assert.equal(plugin.version, AUDIOGEN_VERSION);
   const changelog = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');
   const first = changelog.match(/^## v(\S+)/m);
@@ -25,12 +25,17 @@ test('CLI version matches plugin.json and the first CHANGELOG heading', () => {
 });
 
 test('marketplace and plugin manifests point at the skill', () => {
-  const plugin = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin/plugin.json'), 'utf8'));
+  const plugin = JSON.parse(fs.readFileSync(path.join(root, 'skills/.claude-plugin/plugin.json'), 'utf8'));
   const market = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin/marketplace.json'), 'utf8'));
   assert.equal(plugin.name, 'audiogen');
   assert.equal(market.name, 'audiogen');
-  assert.deepEqual(market.plugins.map((p) => [p.name, p.source]), [['audiogen', '.']]);
+  assert.deepEqual(market.plugins.map((p) => [p.name, p.source]), [['audiogen', './skills']]);
   assert.ok(fs.existsSync(path.join(root, 'skills/audiogen/SKILL.md')));
+  assert.equal(plugin.skills, './audiogen');
+  // The plugin root is skills/, so only the skill ships, and the repo's
+  // CLAUDE.md stays out of it (claude plugin validate --strict warns on it).
+  assert.ok(!fs.existsSync(path.join(root, 'skills/CLAUDE.md')));
+  assert.ok(!fs.existsSync(path.join(root, '.claude-plugin/plugin.json')));
   assert.ok(!fs.existsSync(path.join(root, '.claude/skills/audiogen')), 'skill moved to skills/audiogen');
   const skill = fs.readFileSync(path.join(root, 'skills/audiogen/SKILL.md'), 'utf8');
   assert.ok(skill.includes('Bash(node ${CLAUDE_SKILL_DIR}/generate.cjs *)'));
