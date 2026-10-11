@@ -29,8 +29,9 @@ nearer one. Previously only the first `.env` found was loaded.
   instructions in the README use the new path.
 - New `--version` flag prints just the version, `--help` shows it in its first
   line, and each history entry carries an `audiogenVersion` field.
-- Dev container refreshed to the shared zeveck template (persisted agent
-  state, GitLab CLI, `auth`/`dc` helpers, Chromium-based Playwright setup).
+- Dev container refreshed to the shared zeveck template (agent history,
+  memory, settings, and plugins kept across rebuilds but not sign-ins, GitLab
+  CLI, `auth`/`dc` helpers, Chromium-based Playwright setup).
   Generated or personal files (`.playwright/`, `.claude/skills/playwright-cli/`,
   `.claude/settings.local.json`) are no longer tracked.
 - Tests now check that the CLI version, plugin manifest, and this changelog

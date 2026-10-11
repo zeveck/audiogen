@@ -10,7 +10,8 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, copyFileSync, writeFileSync, rmSync, chmodSync, readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, win32 } from 'node:path';
+import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { homedir, platform } from 'node:os';
 
@@ -103,6 +104,56 @@ export function preflightError(hasDocker, daemonRunning, plat = platform()) {
   return null;
 }
 
+/**
+ * The per-project agent volumes devcontainer.json declares:
+ * agent-<tool>-${devcontainerId}. A devcontainerId is 52 base-32 digits, so
+ * matching that exact shape keeps dc away from every other volume.
+ */
+export const AGENT_TOOLS = ['claude', 'codex', 'gemini'];
+export const AGENT_VOLUME = /^agent-(claude|codex|gemini)-[0-9a-v]{52}$/;
+
+/**
+ * ${devcontainerId} exactly as @devcontainers/cli computes it: SHA-256 of the
+ * id labels as key-sorted JSON, written in base 32 and padded to 52 digits.
+ */
+export function devcontainerId(idLabels) {
+  const json = JSON.stringify(idLabels, Object.keys(idLabels).sort());
+  const hex = createHash('sha256').update(json, 'utf8').digest('hex');
+  return BigInt(`0x${hex}`).toString(32).padStart(52, '0');
+}
+
+/**
+ * The id labels the CLI gives a project's container: its folder and config
+ * file. On Windows the CLI normalizes paths and lowercases the drive letter.
+ */
+export function idLabelsFor(root, plat = platform()) {
+  const form = (p) => {
+    if (plat !== 'win32') return p;
+    const s = win32.normalize(p);
+    return s.length >= 2 && s[1] === ':' ? s[0].toLowerCase() + s.slice(1) : s;
+  };
+  const join_ = plat === 'win32' ? win32.join : join;
+  return {
+    'devcontainer.local_folder': form(root),
+    'devcontainer.config_file': form(join_(root, '.devcontainer', 'devcontainer.json')),
+  };
+}
+
+export const agentVolumeNames = (id) => AGENT_TOOLS.map((tool) => `agent-${tool}-${id}`);
+
+/** Agent volume names among a container's mounts (docker inspect .Mounts). */
+export function agentVolumesFromMounts(mounts) {
+  return (mounts || [])
+    .filter((m) => m && m.Type === 'volume' && AGENT_VOLUME.test(m.Name || ''))
+    .map((m) => m.Name)
+    .sort();
+}
+
+/** Agent volume names in a newline-separated `docker volume ls -q` listing. */
+export function agentVolumesFromList(stdout) {
+  return String(stdout || '').split('\n').map((s) => s.trim()).filter((n) => AGENT_VOLUME.test(n)).sort();
+}
+
 export function parseArgs(argv) {
   const flags = new Set();
   const rest = [];
@@ -187,6 +238,105 @@ function preflight() {
   const err = preflightError(hasDocker, daemon);
   if (err) { console.error(`dc: ${err}`); return false; }
   return true;
+}
+
+/** All agent volumes on this machine (or only those no container uses). */
+function agentVolumesOnMachine({ danglingOnly = false } = {}) {
+  const args = ['volume', 'ls', '-q', ...(danglingOnly ? ['--filter', 'dangling=true'] : [])];
+  const r = capture('docker', args);
+  return r.status === 0 ? agentVolumesFromList(r.stdout) : [];
+}
+
+/**
+ * This project's agent volumes: those its containers mount, plus any whose
+ * name matches the id the CLI derives from this folder. The second finds the
+ * data after `dc rm`, when there is no container to ask. Only names that
+ * exist are returned, so a path form the hash doesn't match finds nothing
+ * rather than something wrong.
+ */
+function projectVolumes(root, containers) {
+  const names = new Set();
+  for (const c of containers) {
+    const r = capture('docker', ['inspect', '--format', '{{json .Mounts}}', c.id]);
+    if (r.status !== 0) continue;
+    try { for (const n of agentVolumesFromMounts(JSON.parse(r.stdout))) names.add(n); } catch { /* skip */ }
+  }
+  const existing = new Set(agentVolumesOnMachine());
+  for (const n of agentVolumeNames(devcontainerId(idLabelsFor(root)))) if (existing.has(n)) names.add(n);
+  return [...names].sort();
+}
+
+/** Ask before deleting. --yes skips; without a terminal to ask on, refuse. */
+async function confirm(question, flags) {
+  if (flags.has('--yes')) return true;
+  if (!process.stdin.isTTY) {
+    console.error('dc: not deleting without confirmation; rerun with --yes.');
+    return false;
+  }
+  // Imported here so an old Node still reaches the friendly version check.
+  const { createInterface } = await import('node:readline/promises');
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try { return /^y(es)?$/i.test((await rl.question(`${question} [y/N] `)).trim()); }
+  catch { process.stdout.write('\n'); return false; } // Ctrl+C / Ctrl+D at the prompt
+  finally { rl.close(); }
+}
+
+/** Remove the containers, then the volumes (Docker refuses while a container uses them). */
+function removeContainersAndVolumes(containers, volumes) {
+  for (const c of containers) {
+    if ((run('docker', ['rm', '-f', c.id]).status ?? 1) !== 0) {
+      console.error(`dc: could not remove container ${c.id} (see above); nothing was deleted.`);
+      return 1;
+    }
+  }
+  if (!volumes.length) return 0;
+  const status = run('docker', ['volume', 'rm', ...volumes]).status ?? 1;
+  if (status !== 0) {
+    console.error('dc: could not delete every volume (see above).'
+      + (containers.length ? ' The container was removed; `dc up` starts it again.' : ''));
+  }
+  return status;
+}
+
+function listVolumes(volumes) {
+  for (const v of volumes) console.log(`  ${v}`);
+}
+
+async function cmdPrune(flags) {
+  const orphans = agentVolumesOnMachine({ danglingOnly: true });
+  if (!orphans.length) { console.log('no unused agent volumes.'); return 0; }
+  console.log('Agent volumes no container uses, from any project on this machine that was');
+  console.log('moved, renamed, or removed with `dc rm` and not started again:');
+  listVolumes(orphans);
+  console.log('\nA project removed with `dc rm` picks its data up again on its next `dc up`;');
+  console.log('deleting it here loses that history.');
+  if (!(await confirm(`Delete these ${orphans.length} volume(s)?`, flags))) return 1;
+  return run('docker', ['volume', 'rm', ...orphans]).status ?? 1;
+}
+
+async function cmdVolumes(root, flags) {
+  const cs = findContainers(root);
+  const volumes = projectVolumes(root, cs);
+  if (!volumes.length) {
+    console.log('this project has no saved agent data.');
+    if (!cs.length) {
+      const n = agentVolumesOnMachine({ danglingOnly: true }).length;
+      if (n) console.log(`(${n} agent volume(s) on this machine are unused; \`dc volumes --prune\` lists them.)`);
+    }
+    return 0;
+  }
+  if (!flags.has('--rm')) {
+    console.log('Saved agent data for this project (history, memory, settings, plugins; no sign-ins):');
+    listVolumes(volumes);
+    console.log('\n`dc volumes --rm` deletes it; `dc up --fresh` deletes it and starts a new container.');
+    return 0;
+  }
+  console.log(cs.length ? 'This removes the container and deletes:' : 'This deletes:');
+  listVolumes(volumes);
+  if (!(await confirm('Delete this project\'s agent history, memory, settings, and plugins?', flags))) return 1;
+  const status = removeContainersAndVolumes(cs, volumes);
+  if (status === 0) console.log('done. The next `dc up` starts with empty agent folders.');
+  return status;
 }
 
 function requireRoot() {
@@ -367,12 +517,14 @@ function cmdDoctor() {
 const HELP = `dc — dev containers without VS Code
 
   dc up [--rebuild] [--no-cache]   create/start the container
+  dc up --fresh [--yes]            rebuild with empty agent folders (deletes history)
   dc build                         build the image
   dc shell                         interactive shell inside it
   dc exec <cmd> [args...]          run a command inside it
   dc claude|codex|gemini|pw [...]  run an agent inside it
   dc down                          stop the container
-  dc rm                            stop and remove it
+  dc rm                            stop and remove it (agent data is kept)
+  dc volumes [--rm | --prune]      list or delete saved agent data (--yes: don't ask)
   dc status                        show this project's containers
   dc logs [--follow]               container logs
   dc doctor                        check prerequisites
@@ -382,7 +534,7 @@ const HELP = `dc — dev containers without VS Code
 
 const FORWARDING = new Set(['exec', 'claude', 'codex', 'gemini', 'pw']);
 
-function main(argv) {
+async function main(argv) {
   const cmd = argv[0];
   // Forwarding commands keep their arguments verbatim; only dc's own commands
   // get flag parsing.
@@ -398,6 +550,15 @@ function main(argv) {
   if (cmd === 'install') return cmdInstall(flags, rest);
   if (cmd === 'uninstall') return cmdUninstall(flags, rest);
   if (cmd === 'doctor') return cmdDoctor();
+  if (cmd === 'volumes') {
+    const unknown = [...flags].filter((f) => !['--rm', '--prune', '--yes'].includes(f));
+    if (unknown.length) { console.error(`dc volumes: unknown option ${unknown.join(' ')}`); return 1; }
+  }
+  if (cmd === 'volumes' && flags.has('--prune')) {
+    if (flags.has('--rm')) { console.error('dc volumes: use --rm or --prune, not both.'); return 1; }
+    // Works across projects, so it doesn't need to run inside one.
+    return preflight() ? cmdPrune(flags) : 1;
+  }
 
   const root = requireRoot();
   // Every remaining command talks to Docker one way or another.
@@ -406,7 +567,20 @@ function main(argv) {
   switch (cmd) {
     case 'up': {
       const a = ['up', '--workspace-folder', root];
-      if (flags.has('--rebuild')) a.push('--remove-existing-container');
+      if (flags.has('--fresh')) {
+        const cs = findContainers(root);
+        const volumes = projectVolumes(root, cs);
+        if (volumes.length) {
+          console.log('--fresh deletes this project\'s saved agent data:');
+          listVolumes(volumes);
+          if (!(await confirm('Delete it and rebuild?', flags))) return 1;
+        } else {
+          console.log('no saved agent data for this project; nothing to clear.');
+        }
+        const status = removeContainersAndVolumes(cs, volumes);
+        if (status !== 0) return status;
+      }
+      if (flags.has('--rebuild') || flags.has('--fresh')) a.push('--remove-existing-container');
       if (flags.has('--no-cache')) a.push('--build-no-cache');
       return dc(a);
     }
@@ -427,11 +601,19 @@ function main(argv) {
     case 'down': case 'rm': {
       const cs = findContainers(root);
       if (!cs.length) { reportNoMatch(root); return 0; }
+      const volumes = cmd === 'rm' ? projectVolumes(root, cs) : [];
       for (const c of cs) {
         run('docker', cmd === 'rm' ? ['rm', '-f', c.id] : ['stop', c.id]);
       }
+      if (volumes.length) {
+        console.log('agent data kept for the next `dc up`:');
+        listVolumes(volumes);
+        console.log('`dc volumes --rm` deletes it.');
+      }
       return 0;
     }
+    case 'volumes':
+      return cmdVolumes(root, flags);
     case 'status': {
       const cs = findContainers(root);
       if (!cs.length) { reportNoMatch(root); return 0; }
@@ -451,5 +633,8 @@ function main(argv) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exit(main(process.argv.slice(2)));
+  main(process.argv.slice(2)).then(
+    (code) => process.exit(code),
+    (err) => { console.error(`dc: ${err && err.message ? err.message : err}`); process.exit(1); },
+  );
 }
