@@ -152,18 +152,22 @@ When you know what you want, drive it directly:
 behavior, no agent required:
 
 ```bash
-node skills/audiogen/generate.cjs music \
+node .claude/skills/audiogen/generate.cjs music \
   "ambient forest loop, flute, gentle strings, 80 BPM" \
   --length-ms 30000 --force-instrumental
 
-node skills/audiogen/generate.cjs voice \
+node .claude/skills/audiogen/generate.cjs voice \
   "Welcome, traveler." --voice-id George --speed 1.05
 
-node skills/audiogen/generate.cjs sfx \
+node .claude/skills/audiogen/generate.cjs sfx \
   "heavy iron portcullis slam, long reverb" --duration 2
 
-node skills/audiogen/generate.cjs voices --limit 20
+node .claude/skills/audiogen/generate.cjs voices --limit 20
 ```
+
+These paths assume the manual install above. With the plugin, the CLI is in
+the plugin cache instead (under `~/.claude/plugins/cache/audiogen/`); in a
+clone of this repository it is `skills/audiogen/generate.cjs`.
 
 Outputs land under `assets/audio/{music,voice,sfx}/<slug>.mp3` by
 default. Use `--output <path>` to redirect.
@@ -215,7 +219,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - run: |
-          node skills/audiogen/generate.cjs music "battle theme" \
+          node .claude/skills/audiogen/generate.cjs music "battle theme" \
             --length-ms 45000 --output assets/audio/battle.mp3
         env:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}

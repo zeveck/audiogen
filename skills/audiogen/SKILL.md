@@ -270,7 +270,7 @@ Every successful generation appends one JSON line to
 `.audiogen-history.jsonl` in the working directory. Schema:
 
     {ts, id, parent_id?, type, prompt, model_id, output_path,
-     output_format, request_body, request_id?}
+     output_format, request_body, request_id?, audiogenVersion}
 
 - `--history-id ID` — tag a generation with an explicit id (otherwise
   the CLI auto-generates one from the output path).

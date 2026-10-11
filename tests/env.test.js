@@ -53,6 +53,21 @@ describe('loadEnv', () => {
     fs.rmdirSync(tmp);
   });
 
+  it('finds .env in an ancestor of cwd (project subfolder, plugin install)', () => {
+    const tmp = makeTmpDir('ancestor');
+    const sub = path.join(tmp, 'assets', 'audio');
+    fs.mkdirSync(sub, { recursive: true });
+    const envPath = path.join(tmp, '.env');
+    fs.writeFileSync(envPath, 'AUDIOGEN_TEST_ANCESTOR_VAR=ancestor_value\n');
+    delete process.env.AUDIOGEN_TEST_ANCESTOR_VAR;
+    process.chdir(sub);
+
+    loadEnv();
+
+    assert.equal(process.env.AUDIOGEN_TEST_ANCESTOR_VAR, 'ancestor_value');
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
   it('walks upward from __dirname until filesystem root', () => {
     // If there's a .env in the project root (ancestor of __dirname), it should
     // be found. We test by ensuring loadEnv does not throw when cwd has no .env

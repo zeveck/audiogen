@@ -30,10 +30,12 @@ describe('skill structure', () => {
       fm.includes('disable-model-invocation: false'),
       'frontmatter must have disable-model-invocation'
     );
+    const allowed = fm.match(/^allowed-tools:\s*(.*)$/m);
+    assert.ok(allowed, 'frontmatter must have allowed-tools');
     assert.ok(
-      fm.includes('Bash(node ${CLAUDE_SKILL_DIR}/generate.cjs *)') &&
-        fm.includes('Bash(node */audiogen/generate.cjs *)'),
-      'frontmatter must have allowed-tools'
+      allowed[1].includes('Bash(node ${CLAUDE_SKILL_DIR}/generate.cjs *)') &&
+        allowed[1].includes('Bash(node */audiogen/generate.cjs *)'),
+      'allowed-tools must allow the bundled CLI'
     );
     assert.ok(fm.includes('argument-hint:'), 'frontmatter must have argument-hint');
   });

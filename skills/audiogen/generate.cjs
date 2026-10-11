@@ -49,10 +49,13 @@ function fail(msg, details) {
  * Locate and load a `.env` file. Mirrors imagegen's env walker verbatim.
  *
  * Candidate list:
- *   1. process.cwd()  (single candidate, NO walk-up from cwd)
- *   2. Every ancestor of __dirname, from __dirname itself up to '/'.
+ *   1. process.cwd() and every ancestor up to '/', so a project's .env is
+ *      found from any subfolder even when the CLI lives outside the project
+ *      (a Claude Code plugin install under ~/.claude/plugins/cache).
+ *   2. Every ancestor of __dirname, from __dirname itself up to '/' (a skill
+ *      copied into the project).
  *
- * Duplicates (cwd may equal an ancestor of __dirname) are deduped.
+ * Duplicates (cwd may share ancestors with __dirname) are deduped.
  * For each candidate `d`, if `<d>/.env` exists, call `process.loadEnvFile`
  * on it in try/catch and return on success (stop walking).
  *
@@ -67,13 +70,15 @@ function fail(msg, details) {
 function loadEnv() {
   if (typeof process.loadEnvFile !== 'function') return;
 
-  const candidates = [process.cwd()];
-  let d = path.dirname(__filename);
-  while (true) {
-    candidates.push(d);
-    const parent = path.dirname(d);
-    if (parent === d) break; // hit filesystem root
-    d = parent;
+  const candidates = [];
+  for (const start of [process.cwd(), path.dirname(__filename)]) {
+    let d = start;
+    while (true) {
+      candidates.push(d);
+      const parent = path.dirname(d);
+      if (parent === d) break; // hit filesystem root
+      d = parent;
+    }
   }
   const seen = new Set();
   for (const c of candidates) {
