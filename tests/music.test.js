@@ -14,7 +14,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
-const gen = path.resolve(__dirname, '..', '.claude', 'skills', 'audiogen', 'generate.cjs');
+const gen = path.resolve(__dirname, '..', 'skills', 'audiogen', 'generate.cjs');
 const {
   runMusic,
   validateMusicOptions,
@@ -418,6 +418,7 @@ describe('runMusic live (stubbed fetch)', () => {
     const rec = JSON.parse(lines[0]);
     assert.equal(rec.type, 'music');
     assert.equal(rec.phase, 'music');
+    assert.equal(rec.audiogenVersion, require(gen).AUDIOGEN_VERSION);
     assert.equal(rec.prompt, 'epic theme');
     assert.equal(rec.music_length_ms, 30000);
     assert.equal(rec.output_format, 'mp3_44100_128');

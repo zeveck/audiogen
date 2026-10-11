@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const gen = path.resolve(__dirname, '..', '.claude', 'skills', 'audiogen', 'generate.cjs');
+const gen = path.resolve(__dirname, '..', 'skills', 'audiogen', 'generate.cjs');
 const { appendHistory } = require(gen);
 
 describe('appendHistory', () => {

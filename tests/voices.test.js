@@ -20,7 +20,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
-const gen = path.resolve(__dirname, '..', '.claude', 'skills', 'audiogen', 'generate.cjs');
+const gen = path.resolve(__dirname, '..', 'skills', 'audiogen', 'generate.cjs');
 const {
   runVoicesList,
   fetchAllVoices,

@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # ─── CONFIGURE ──────────────────────────────────────────────────────
 UNIT_TEST_CMD='node --test tests/*.test.js'
 E2E_TEST_CMD='node tests/e2e/audiogen-e2e.js'
-BUILD_TEST_CMD='node -c .claude/skills/audiogen/generate.cjs && node --test tests/build/*.test.js'
+BUILD_TEST_CMD='node -c skills/audiogen/generate.cjs && node --test tests/build/*.test.js'
 # ────────────────────────────────────────────────────────────────────
 
 BOLD='\033[1m'

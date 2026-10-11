@@ -14,6 +14,11 @@ const path = require('node:path');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 
+// Release version (CalVer YYYY.M.D, valid semver). Keep in sync with
+// .claude-plugin/plugin.json and the top heading of CHANGELOG.md; a test
+// enforces this.
+const AUDIOGEN_VERSION = '2026.10.11';
+
 // ────────────────────────────────────────────────────────────────────
 // Errors
 // ────────────────────────────────────────────────────────────────────
@@ -356,7 +361,7 @@ function parseArgs(argv) {
 // Help
 // ────────────────────────────────────────────────────────────────────
 
-const HELP_TEXT = `audiogen — generate game audio via ElevenLabs
+const HELP_TEXT = `audiogen v${AUDIOGEN_VERSION} — generate game audio via ElevenLabs
 
 Usage:
   node generate.cjs <subcommand> [prompt_or_query_words...] [options]
@@ -376,6 +381,7 @@ Common options:
   --force                    Overwrite existing output file (disables auto-version).
   --history-id ID            Group-tag for iteration threads.
   --history-parent ID        Parent record's id; marks this as a derivative.
+  --version                  Print the audiogen version and exit.
   --help                     Show usage.
 
 Music-only:
@@ -789,6 +795,7 @@ async function runMusic(parsed, deps = {}) {
 
   // History record — best-effort; failures surface as stderr warnings only.
   const record = {
+    audiogenVersion: AUDIOGEN_VERSION,
     ts: new Date().toISOString(),
     type: 'music',
     phase: 'music',
@@ -1154,6 +1161,7 @@ async function runTTS(parsed, deps = {}) {
   const result = await callElevenLabs(callOpts);
 
   const record = {
+    audiogenVersion: AUDIOGEN_VERSION,
     ts: new Date().toISOString(),
     type: 'voice',
     phase: 'voice',
@@ -1365,6 +1373,7 @@ async function runSFX(parsed, deps = {}) {
 
   // History record — best-effort; failures surface as stderr warnings only.
   const record = {
+    audiogenVersion: AUDIOGEN_VERSION,
     ts: new Date().toISOString(),
     type: 'sfx',
     phase: 'sfx',
@@ -1702,6 +1711,10 @@ async function runVoicesList(parsed, deps = {}) {
 // ────────────────────────────────────────────────────────────────────
 
 async function main(argv) {
+  if (argv.includes('--version')) {
+    process.stdout.write(`${AUDIOGEN_VERSION}\n`);
+    process.exit(0);
+  }
   assertNodeVersion();
   loadEnv();
 
@@ -1776,6 +1789,7 @@ async function main(argv) {
 // ────────────────────────────────────────────────────────────────────
 
 module.exports = {
+  AUDIOGEN_VERSION,
   // core
   fail,
   loadEnv,

@@ -10,7 +10,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
-const skillDir = path.resolve(__dirname, '..', '..', '.claude', 'skills', 'audiogen');
+const skillDir = path.resolve(__dirname, '..', '..', 'skills', 'audiogen');
 
 describe('skill structure', () => {
   it('SKILL.md exists and has valid YAML frontmatter', () => {
@@ -31,7 +31,8 @@ describe('skill structure', () => {
       'frontmatter must have disable-model-invocation'
     );
     assert.ok(
-      fm.includes('allowed-tools: Bash(node */generate.cjs *)'),
+      fm.includes('Bash(node ${CLAUDE_SKILL_DIR}/generate.cjs *)') &&
+        fm.includes('Bash(node */audiogen/generate.cjs *)'),
       'frontmatter must have allowed-tools'
     );
     assert.ok(fm.includes('argument-hint:'), 'frontmatter must have argument-hint');

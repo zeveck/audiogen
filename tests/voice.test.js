@@ -18,7 +18,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
-const gen = path.resolve(__dirname, '..', '.claude', 'skills', 'audiogen', 'generate.cjs');
+const gen = path.resolve(__dirname, '..', 'skills', 'audiogen', 'generate.cjs');
 const {
   runTTS,
   resolveVoiceId,
@@ -616,6 +616,7 @@ describe('runTTS live (stubbed fetch)', () => {
     const rec = JSON.parse(hist[0]);
     assert.equal(rec.type, 'voice');
     assert.equal(rec.phase, 'voice');
+    assert.equal(rec.audiogenVersion, require(gen).AUDIOGEN_VERSION);
     assert.equal(rec.voice_id, 'JBFqnCBsd6RMkjVDRZzb');
     assert.equal(rec.text, 'Halt!');
     assert.equal(rec.model_id, VOICE_DEFAULT_MODEL_ID);

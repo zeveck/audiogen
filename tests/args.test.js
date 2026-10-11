@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 
-const gen = path.resolve(__dirname, '..', '.claude', 'skills', 'audiogen', 'generate.cjs');
+const gen = path.resolve(__dirname, '..', 'skills', 'audiogen', 'generate.cjs');
 const { parseArgs, SUBCOMMANDS, FLAG_SPECS } = require(gen);
 
 describe('parseArgs', () => {

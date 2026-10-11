@@ -2,7 +2,7 @@
 name: audiogen
 description: Generate game audio (music, voices, sound effects) via ElevenLabs.
 disable-model-invocation: false
-allowed-tools: "Bash(node */generate.cjs *)"
+allowed-tools: "Bash(node ${CLAUDE_SKILL_DIR}/generate.cjs *), Bash(node */audiogen/generate.cjs *)"
 argument-hint: "<music|voice|sfx|voices> <description> [--voice-id ID] [--length-ms MS] [--duration SEC] [--output PATH]"
 ---
 
@@ -46,8 +46,10 @@ CLI (e.g. from CI).
 /audiogen voices --gender female --language en
 ```
 
-All outputs default to `assets/audio/{music,voice,sfx}/<slug>.mp3` in the
-current working directory.
+Each of these runs the bundled CLI as
+`node ${CLAUDE_SKILL_DIR}/generate.cjs <subcommand> ...`. All outputs default
+to `assets/audio/{music,voice,sfx}/<slug>.mp3` in the current working
+directory.
 
 ## Handling No Arguments
 
@@ -179,7 +181,7 @@ are briefing a human foley artist or composer:
 - **Stack adjectives for SFX.** The model responds well to three or
   four descriptors chained ("crunchy, wet, low-frequency, metallic").
 
-For quick starting points, see **`reference.md`** — it contains ~20
+For quick starting points, see **`${CLAUDE_SKILL_DIR}/reference.md`** — it contains ~20
 music presets, ~15 voice archetypes, and ~25 SFX presets. Presets are
 templates, not literal prompts: expand them with any additional cues
 from the user's phrasing.
@@ -197,7 +199,7 @@ from the user's phrasing.
 3. The voice cache auto-refreshes after 24 hours. Use `--refresh` if
    the user says "new voices were added" or you hit a "voice not
    found" error.
-4. See `reference.md` for archetype-to-search-query guidance (e.g.
+4. See `${CLAUDE_SKILL_DIR}/reference.md` for archetype-to-search-query guidance (e.g.
    "Arcane Scholar → `voices wise old male english`").
 
 ## Output Organization
@@ -303,7 +305,7 @@ as of April 2026:
 - **Free tier:** 10,000 credits/month — roughly 60 minutes of Flash
   TTS, or a handful of SFX.
 
-Consult `reference.md` for a detailed cost table and worked examples.
+Consult `${CLAUDE_SKILL_DIR}/reference.md` for a detailed cost table and worked examples.
 When in doubt, quote from the live page, not from this file.
 
 ## Licensing
@@ -363,12 +365,14 @@ When in doubt, quote from the live page, not from this file.
 
 ## Script Location
 
-The CLI lives at `.claude/skills/audiogen/generate.cjs`. It is
+The CLI is bundled next to this `SKILL.md`, at
+`${CLAUDE_SKILL_DIR}/generate.cjs`. That path works whether the skill was
+installed as a plugin or copied into a skills folder. It is
 dual-shape: as a skill backend (invoked via this SKILL.md), and as a
 standalone CLI. Run it directly from any shell for scripting, CI, or
 manual experimentation:
 
-    node .claude/skills/audiogen/generate.cjs music "chiptune boss" \
+    node ${CLAUDE_SKILL_DIR}/generate.cjs music "chiptune boss" \
       --length-ms 45000 --output-format mp3_44100_128
 
 All flags work identically in both modes. Run `--help` for the

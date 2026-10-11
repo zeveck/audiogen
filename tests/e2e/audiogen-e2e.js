@@ -42,7 +42,7 @@ if (!process.env.ELEVENLABS_API_KEY || process.env.SKIP_E2E === '1') {
 // ────────────────────────────────────────────────────────────────────
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
-const GENERATE = path.join(REPO_ROOT, '.claude', 'skills', 'audiogen', 'generate.cjs');
+const GENERATE = path.join(REPO_ROOT, 'skills', 'audiogen', 'generate.cjs');
 const SCRATCH = fs.mkdtempSync(path.join(os.tmpdir(), 'audiogen-e2e-'));
 
 function cleanup() {
