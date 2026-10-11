@@ -11,7 +11,9 @@ The running version is shown by `--help` and `--version`, and recorded as
 ## v2026.10.11
 
 First versioned release. Generation behavior, flags, and defaults are
-unchanged.
+unchanged, except that `.env` lookup now walks up from the current directory
+before the CLI's own folder, so a project's `.env` is found from any subfolder
+even when the CLI runs from a plugin install.
 
 - audiogen is now a Claude Code plugin with its own marketplace:
   `/plugin install audiogen --marketplace zeveck/audiogen`. Installed copies
@@ -28,8 +30,8 @@ unchanged.
   Generated or personal files (`.playwright/`, `.claude/skills/playwright-cli/`,
   `.claude/settings.local.json`) are no longer tracked.
 - Tests now check that the CLI version, plugin manifest, and this changelog
-  agree, and the skill-structure test accepts the quoted `allowed-tools`
-  front matter that was already in `SKILL.md`.
+  agree, and the skill-structure test parses the quoted `allowed-tools`
+  front matter that was already in `SKILL.md` (it previously failed on it).
 
 ## Before v2026.10.11 — unversioned releases installed by copying the skill folder
 
