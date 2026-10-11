@@ -166,7 +166,7 @@ node .claude/skills/audiogen/generate.cjs voices --limit 20
 ```
 
 These paths assume the manual install above. With the plugin, the CLI is in
-the plugin cache instead (under `~/.claude/plugins/cache/audiogen/`); in a
+the plugin cache instead (`~/.claude/plugins/cache/audiogen/audiogen/<version>/skills/audiogen/`); in a
 clone of this repository it is `skills/audiogen/generate.cjs`.
 
 Outputs land under `assets/audio/{music,voice,sfx}/<slug>.mp3` by

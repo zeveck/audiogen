@@ -56,8 +56,10 @@ function fail(msg, details) {
  *      copied into the project).
  *
  * Duplicates (cwd may share ancestors with __dirname) are deduped.
- * For each candidate `d`, if `<d>/.env` exists, call `process.loadEnvFile`
- * on it in try/catch and return on success (stop walking).
+ * Every candidate `<d>/.env` that exists is loaded, nearest first, each in
+ * try/catch. Since loadEnvFile never overrides a variable that is already
+ * set, the nearest file wins per variable, and an unrelated parent .env
+ * (such as ~/.env) can't hide a key set in a nearer one.
  *
  * Overwrite semantics: Node's `process.loadEnvFile` gives SHELL-EXPORTED
  * values precedence over file values. `ELEVENLABS_API_KEY=X` in the shell
@@ -88,9 +90,8 @@ function loadEnv() {
     if (!fs.existsSync(envPath)) continue;
     try {
       process.loadEnvFile(envPath);
-      return;
     } catch (_e) {
-      // try next candidate; .env may be malformed or unreadable
+      // skip a malformed or unreadable .env and keep going
     }
   }
 }

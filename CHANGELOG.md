@@ -11,9 +11,12 @@ The running version is shown by `--help` and `--version`, and recorded as
 ## v2026.10.11
 
 First versioned release. Generation behavior, flags, and defaults are
-unchanged, except that `.env` lookup now walks up from the current directory
-before the CLI's own folder, so a project's `.env` is found from any subfolder
-even when the CLI runs from a plugin install.
+unchanged, except for `.env` loading: the CLI now loads every `.env` in the
+current directory and its parents, then in its own folder and its parents,
+nearest first, and a file never overrides a variable that is already set. A
+project's `.env` is found from any subfolder even when the CLI runs from a
+plugin install, and an unrelated parent `.env` can't hide a key set in a
+nearer one. Previously only the first `.env` found was loaded.
 
 - audiogen is now a Claude Code plugin with its own marketplace:
   `/plugin install audiogen --marketplace zeveck/audiogen`. Installed copies

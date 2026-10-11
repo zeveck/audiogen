@@ -21,8 +21,9 @@ CLI (e.g. from CI).
 - **`ELEVENLABS_API_KEY`** — get one at
   <https://elevenlabs.io/app/settings/api-keys>. Either export it in your
   shell, or add `ELEVENLABS_API_KEY=...` to a `.env` file at the project
-  root. The CLI walks up from cwd and from the script directory looking
-  for a `.env`, loading the first one found. **Shell-exported values take
+  root. The CLI loads every `.env` in cwd and its parents, then in the
+  script directory and its parents; the nearest file wins for each
+  variable. **Shell-exported values take
   precedence over `.env` values** (Node's default; not an audiogen
   choice).
 - **ElevenLabs tier** — the API works on any paid tier. Free-tier

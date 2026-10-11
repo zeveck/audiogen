@@ -68,6 +68,23 @@ describe('loadEnv', () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
+  it('a parent .env without a variable does not hide a nearer one; nearest wins', () => {
+    const tmp = makeTmpDir('layer');
+    const project = path.join(tmp, 'project');
+    fs.mkdirSync(project, { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.env'), 'AUDIOGEN_LAYER_A=parent\nAUDIOGEN_LAYER_B=parent\n');
+    fs.writeFileSync(path.join(project, '.env'), 'AUDIOGEN_LAYER_A=project\n');
+    delete process.env.AUDIOGEN_LAYER_A;
+    delete process.env.AUDIOGEN_LAYER_B;
+    process.chdir(project);
+
+    loadEnv();
+
+    assert.equal(process.env.AUDIOGEN_LAYER_A, 'project');
+    assert.equal(process.env.AUDIOGEN_LAYER_B, 'parent');
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
   it('walks upward from __dirname until filesystem root', () => {
     // If there's a .env in the project root (ancestor of __dirname), it should
     // be found. We test by ensuring loadEnv does not throw when cwd has no .env
