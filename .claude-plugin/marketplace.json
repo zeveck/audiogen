@@ -1,0 +1,14 @@
+{
+  "name": "audiogen",
+  "owner": {
+    "name": "zeveck"
+  },
+  "description": "audiogen: game audio generation (music, voice, sound effects) with ElevenLabs.",
+  "plugins": [
+    {
+      "name": "audiogen",
+      "source": ".",
+      "description": "Generate game music, voice lines, and sound effects with ElevenLabs."
+    }
+  ]
+}

@@ -56,23 +56,51 @@ you describe, the skill figures out the call.
 
 ## Install
 
-You can probably just **ask your agent**: "install the audiogen skill
-from `github.com/zeveck/audiogen` into this project." It will follow
-the manual steps below.
+### Claude Code
 
-To do it yourself, three files into `.claude/skills/audiogen/`:
+Install audiogen as a Claude Code plugin (Claude Code 2.1.275 or later):
+
+```text
+/plugin install audiogen --marketplace zeveck/audiogen
+```
+
+Or in two steps, which also works on older versions:
+
+```text
+/plugin marketplace add zeveck/audiogen
+/plugin install audiogen@audiogen
+```
+
+The skill is then available as `/audiogen` (or `/audiogen:audiogen`).
+Update to a new release with:
+
+```bash
+claude plugin marketplace update audiogen
+claude plugin update audiogen@audiogen
+```
+
+then run `/reload-plugins` in any open session. The installed version is shown
+by `claude plugin list`, printed by `node <skill>/generate.cjs --version`, and
+recorded as `audiogenVersion` in every `.audiogen-history.jsonl` entry.
+
+Without the plugin system, copy the three files of `skills/audiogen/` into
+`.claude/skills/audiogen/` in a project (or your user skills directory). Copies
+don't update; re-copy to upgrade. You can also just **ask your agent**:
+"install the audiogen skill from `github.com/zeveck/audiogen` into this
+project."
 
 ```bash
 mkdir -p .claude/skills/audiogen
 cd .claude/skills/audiogen
-curl -O https://raw.githubusercontent.com/zeveck/audiogen/main/.claude/skills/audiogen/SKILL.md
-curl -O https://raw.githubusercontent.com/zeveck/audiogen/main/.claude/skills/audiogen/generate.cjs
-curl -O https://raw.githubusercontent.com/zeveck/audiogen/main/.claude/skills/audiogen/reference.md
+curl -O https://raw.githubusercontent.com/zeveck/audiogen/main/skills/audiogen/SKILL.md
+curl -O https://raw.githubusercontent.com/zeveck/audiogen/main/skills/audiogen/generate.cjs
+curl -O https://raw.githubusercontent.com/zeveck/audiogen/main/skills/audiogen/reference.md
 ```
 
 Confirm:
 
 ```bash
+node .claude/skills/audiogen/generate.cjs --version
 node .claude/skills/audiogen/generate.cjs --help
 ```
 
@@ -124,17 +152,17 @@ When you know what you want, drive it directly:
 behavior, no agent required:
 
 ```bash
-node .claude/skills/audiogen/generate.cjs music \
+node skills/audiogen/generate.cjs music \
   "ambient forest loop, flute, gentle strings, 80 BPM" \
   --length-ms 30000 --force-instrumental
 
-node .claude/skills/audiogen/generate.cjs voice \
+node skills/audiogen/generate.cjs voice \
   "Welcome, traveler." --voice-id George --speed 1.05
 
-node .claude/skills/audiogen/generate.cjs sfx \
+node skills/audiogen/generate.cjs sfx \
   "heavy iron portcullis slam, long reverb" --duration 2
 
-node .claude/skills/audiogen/generate.cjs voices --limit 20
+node skills/audiogen/generate.cjs voices --limit 20
 ```
 
 Outputs land under `assets/audio/{music,voice,sfx}/<slug>.mp3` by
@@ -161,14 +189,14 @@ Plus:
   sessions.
 - **Prompt presets.** ~20 music presets, ~15 voice archetypes, ~25 SFX
   entries in
-  [`reference.md`](.claude/skills/audiogen/reference.md) — the agent
+  [`reference.md`](skills/audiogen/reference.md) — the agent
   expands these into full prompts when you name a style.
 - **Retry & backoff.** 429/500/502/503 retried 3× with
   `Retry-After` honored.
 - **Zero dependencies.** Uses Node 20.14+'s built-in `fetch` and
   `process.loadEnvFile`. No `npm install` anywhere.
 
-See [`SKILL.md`](.claude/skills/audiogen/SKILL.md) for the full prompt
+See [`SKILL.md`](skills/audiogen/SKILL.md) for the full prompt
 reference and edge-case catalogue.
 
 ---
@@ -187,7 +215,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - run: |
-          node .claude/skills/audiogen/generate.cjs music "battle theme" \
+          node skills/audiogen/generate.cjs music "battle theme" \
             --length-ms 45000 --output assets/audio/battle.mp3
         env:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
@@ -209,6 +237,13 @@ jobs:
   ElevenLabs UI, not here.
 
 ---
+
+## Repository Layout
+
+The distributable skill lives in `skills/audiogen/` (`SKILL.md`,
+`generate.cjs`, `reference.md`); `.claude-plugin/` holds the plugin and
+marketplace manifests. Test the plugin locally with `claude --plugin-dir .`.
+Releases are listed in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Development
 
