@@ -1,9 +1,8 @@
 # Changelog
 
-audiogen uses date-based versions: `vYYYY.M.D` (for example `v2026.10.11`),
-which are also valid semver. For a second release on the same day, use the next
-day's date rather than a `-1` suffix, because semver sorts `2026.10.11-1`
-before `2026.10.11`.
+audiogen uses the release date as its version: `vYYYY.M.D` (for example
+`v2026.10.11`). A second release on the same day adds `.2`, a third `.3`, and
+so on (`v2026.10.11.2`).
 
 The running version is shown by `--help` and `--version`, and recorded as
 `audiogenVersion` in every `.audiogen-history.jsonl` entry.

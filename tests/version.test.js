@@ -12,7 +12,7 @@ const gen = path.join(root, 'skills', 'audiogen', 'generate.cjs');
 const { AUDIOGEN_VERSION } = require(gen);
 
 test('version is date-based CalVer', () => {
-  assert.match(AUDIOGEN_VERSION, /^\d{4}\.\d{1,2}\.\d{1,2}$/);
+  assert.match(AUDIOGEN_VERSION, /^\d{4}\.\d{1,2}\.\d{1,2}(\.\d+)?$/);
 });
 
 test('CLI version matches plugin.json and the first CHANGELOG heading', () => {
