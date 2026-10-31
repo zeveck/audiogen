@@ -116,9 +116,11 @@ export ELEVENLABS_API_KEY='sk_...'
 echo 'ELEVENLABS_API_KEY=sk_...' > .env
 ```
 
-Get a key at <https://elevenlabs.io/app/settings/api-keys>. Free tier
-(10K credits/month) works for everything the skill does; paid tiers
-remove the attribution requirement on output. Node **≥ 20.14** required
+Get a key at <https://elevenlabs.io/app/settings/api-keys>. The free
+plan (10K credits/month) works for everything the skill does, at 64 kbps,
+and its audio must credit ElevenLabs; paid plans need no credit. The
+skill checks which plan you're on (`node skills/audiogen/generate.cjs plan`)
+and only asks for the credit on the free one. Node **≥ 20.14** required
 (for the built-in `process.loadEnvFile`).
 
 ---
@@ -182,6 +184,7 @@ default. Use `--output <path>` to redirect.
 | `voice` | `POST /v1/text-to-speech/{voice_id}` | TTS, 40K-char input cap, `eleven_multilingual_v2` default |
 | `sfx` | `POST /v1/sound-generation` | 0.5–30 s effects; `--loop` for seamless game ambience |
 | `voices` | `GET /v2/voices` | Browse/filter catalog; cached 24 h to `.audiogen-voices.json` |
+| `plan` | `GET /v1/user/subscription` | Which ElevenLabs plan the key is on, and whether audio must credit ElevenLabs |
 
 Plus:
 
@@ -231,10 +234,10 @@ jobs:
 
 ## Licensing & terms
 
-- **Your generated audio**: paid tiers grant perpetual commercial
-  rights (survive cancellation). Free tier requires attribution
-  ("Sound effect/voice/music by ElevenLabs"). Verify your plan at
-  <https://elevenlabs.io/pricing>.
+- **Your generated audio**: paid plans grant perpetual commercial
+  rights (survive cancellation). The free plan requires a credit
+  ("Music and sound effects created with ElevenLabs."). `plan` tells
+  you which plan your key is on.
 - **Voice cloning (IVC/PVC)** is **out of scope** for this skill.
   ElevenLabs requires explicit, recorded consent from the voice owner
   and never permits public-figure cloning. Do that work through the

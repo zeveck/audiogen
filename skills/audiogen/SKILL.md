@@ -3,7 +3,7 @@ name: audiogen
 description: Generate game audio (music, voices, sound effects) via ElevenLabs.
 disable-model-invocation: false
 allowed-tools: "Bash(node ${CLAUDE_SKILL_DIR}/generate.cjs *), Bash(node */audiogen/generate.cjs *)"
-argument-hint: "<music|voice|sfx|voices> <description> [--voice-id ID] [--length-ms MS] [--duration SEC] [--output PATH]"
+argument-hint: "<music|voice|sfx|voices|plan> <description> [--voice-id ID] [--length-ms MS] [--duration SEC] [--output PATH]"
 ---
 
 # /audiogen — Game Audio Generation via ElevenLabs
@@ -26,10 +26,10 @@ CLI (e.g. from CI).
   variable. **Shell-exported values take
   precedence over `.env` values** (Node's default; not an audiogen
   choice).
-- **ElevenLabs tier** — the API works on any paid tier. Free-tier
-  accounts are restricted to `output_format=mp3_44100_64`; see Edge
-  Cases. Free-tier output requires attribution; paid-tier output comes
-  with perpetual commercial rights.
+- **ElevenLabs plan** — any plan works, free or paid. Don't assume
+  which one the user has: `plan` (below) checks. Only free-plan audio
+  must credit ElevenLabs, and free accounts are limited to
+  `--output-format mp3_44100_64`. See **Licensing**.
 
 ## Quick Start
 
@@ -64,7 +64,7 @@ it be?"
 
 The first positional word is always a subcommand:
 
-    /audiogen music|voice|sfx|voices <rest...>
+    /audiogen music|voice|sfx|voices|plan <rest...>
 
 When the user's phrasing makes intent obvious, pick the subcommand
 yourself:
@@ -168,6 +168,18 @@ The cache file is gitignored. It is not a source of truth — the
 ElevenLabs catalog is — but is the canonical resolver for `--voice-id
 <name>`.
 
+### `plan` — which ElevenLabs plan this key is on
+
+    /audiogen plan
+
+Reads `GET /v1/user/subscription` and prints one JSON line, for
+example `{"plan":"free","creditRequired":true,"creditsLeft":9900,"creditLimit":10000}`.
+`plan` is `free`, a paid plan's name (`starter`, `creator`, `pro`, …),
+or `unknown` when the key isn't allowed to read the account (keys can
+be limited to generation) or ElevenLabs can't be reached. It costs no
+credits. Run it once before the first generation in a session; see
+**Licensing** for what to do with the answer.
+
 ## How to Compose Prompts
 
 Music and SFX prompts are free-form natural language. Write like you
@@ -247,8 +259,8 @@ exits 1. Common patterns:
 
 - **401 / 402** — API key invalid, out of credits, or tier
   restriction. Check the key and billing page.
-- **422 with `output_format` in the detail** — typically a free-tier
-  restriction. The CLI appends the hint "Free-tier accounts are
+- **422 with `output_format` in the detail** — the free plan's
+  format limit, so the account is on the free plan. The CLI appends the hint "Free-tier accounts are
   restricted to `mp3_44100_64`. Try `--output-format mp3_44100_64`."
 - **422 other** — prompt rejected (content policy, unsupported
   parameter combo, …). Refine the prompt and retry.
@@ -311,10 +323,26 @@ When in doubt, quote from the live page, not from this file.
 
 ## Licensing
 
-- **Paid-tier output** — user-owned, with **perpetual commercial
-  rights that survive account cancellation**.
-- **Free-tier output** — commercial use permitted, but attribution
-  to ElevenLabs is required per their terms.
+- **Paid-plan output** — user-owned, with **perpetual commercial
+  rights that survive account cancellation**. No credit needed.
+- **Free-plan output** — commercial use permitted, but it must credit
+  ElevenLabs per their terms.
+
+Go by what `plan` reports, never by guessing:
+
+- `free` — generate with `--output-format mp3_44100_64` (the only
+  format free accounts get), and tell the user once that the audio
+  needs a credit, such as "Music and sound effects created with
+  ElevenLabs." in their credits or README.
+- a paid plan — say nothing about credits.
+- `unknown` — generate normally. If the default `mp3_44100_128` works,
+  it's a paid plan: no credit. If it fails with the free-tier
+  `output_format` hint, it's the free plan: retry with
+  `--output-format mp3_44100_64` and mention the credit as above. If
+  nothing gets generated, don't bring up credits.
+
+When audiogen runs for another skill that has its own credit rule,
+such as gamegen, follow that skill's rule for where the credit goes.
 - **Voice cloning (IVC / PVC)** — requires explicit, recorded consent
   from the voice owner. **NEVER clone a public figure's voice.**
   Cloning flows live in the ElevenLabs UI; this skill does not expose
@@ -342,7 +370,8 @@ When in doubt, quote from the live page, not from this file.
 ## Edge Cases
 
 - **Free-tier 422 with `output_format`** — the CLI appends a hint
-  suggesting `--output-format mp3_44100_64`. Follow it.
+  suggesting `--output-format mp3_44100_64`. Follow it; it also means
+  the account is on the free plan (see **Licensing**).
 - **Music loops** — no native API flag. Use engine-side looping or
   craft a `composition_plan` out-of-band.
 - **Duplicate voice names** — the cache may contain two "Adam"s (e.g.
@@ -374,7 +403,7 @@ standalone CLI. Run it directly from any shell for scripting, CI, or
 manual experimentation:
 
     node ${CLAUDE_SKILL_DIR}/generate.cjs music "chiptune boss" \
-      --length-ms 45000 --output-format mp3_44100_128
+      --length-ms 45000
 
 All flags work identically in both modes. Run `--help` for the
 authoritative flag surface; this file is prose, `generate.cjs --help`

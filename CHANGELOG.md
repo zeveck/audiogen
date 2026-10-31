@@ -8,6 +8,18 @@ before `2026.10.11`.
 The running version is shown by `--help` and `--version`, and recorded as
 `audiogenVersion` in every `.audiogen-history.jsonl` entry.
 
+## v2026.10.31
+
+- audiogen no longer assumes the free ElevenLabs plan. A new `plan`
+  subcommand reads the account's plan (`GET /v1/user/subscription`) and
+  says whether audio must credit ElevenLabs. The skill checks it before
+  generating and asks for the credit only on the free plan, where it also
+  uses the 64 kbps format free accounts are limited to. When the key
+  can't read the plan, the first generation settles it: the default
+  `mp3_44100_128` working means a paid plan.
+- Tests run as CommonJS wherever the repo is cloned, including inside a
+  folder whose `package.json` sets `"type": "module"`.
+
 ## v2026.10.11
 
 First versioned release. Generation behavior, flags, and defaults are

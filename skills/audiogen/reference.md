@@ -570,6 +570,8 @@ lag changes.
 - **10,000 credits / month.** Roughly 60 minutes of Flash TTS, ~30
   minutes of Multilingual-v2 TTS, or ~80 SFX generations.
 - Free-tier output **requires attribution** per ElevenLabs' terms.
+  `generate.cjs plan` tells you which plan a key is on; see **Licensing**
+  in `SKILL.md`.
 - Free-tier `output_format` is restricted to `mp3_44100_64` — see the
   Edge Cases section of `SKILL.md` for the 422 recovery hint.
 

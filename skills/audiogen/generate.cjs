@@ -17,7 +17,7 @@ const { pipeline } = require('node:stream/promises');
 // Release version (CalVer YYYY.M.D, valid semver). Keep in sync with
 // skills/.claude-plugin/plugin.json and the top heading of CHANGELOG.md; a test
 // enforces this.
-const AUDIOGEN_VERSION = '2026.10.11';
+const AUDIOGEN_VERSION = '2026.10.31';
 
 // ────────────────────────────────────────────────────────────────────
 // Errors
@@ -252,7 +252,7 @@ function appendHistory(record, writeFn = fs.appendFileSync) {
 // CLI arg parser
 // ────────────────────────────────────────────────────────────────────
 
-const SUBCOMMANDS = new Set(['music', 'voice', 'sfx', 'voices']);
+const SUBCOMMANDS = new Set(['music', 'voice', 'sfx', 'voices', 'plan']);
 
 // Flag registry. For each flag: { value: true } means it consumes the next
 // token; { value: false } is boolean (no value).
@@ -346,7 +346,7 @@ function parseArgs(argv) {
   }
 
   if (positionals.length === 0) {
-    const err = new Error('missing subcommand (expected one of music|voice|sfx|voices)');
+    const err = new Error('missing subcommand (expected one of music|voice|sfx|voices|plan)');
     err.usage = true;
     throw err;
   }
@@ -354,7 +354,7 @@ function parseArgs(argv) {
   const subcommand = positionals.shift();
   if (!SUBCOMMANDS.has(subcommand)) {
     const err = new Error(
-      `unknown subcommand: ${subcommand} (expected one of music|voice|sfx|voices)`
+      `unknown subcommand: ${subcommand} (expected one of music|voice|sfx|voices|plan)`
     );
     err.usage = true;
     throw err;
@@ -377,6 +377,8 @@ Subcommands:
   voice  <text...>           Generate TTS audio; requires --voice-id.
   sfx    <prompt...>         Generate a sound effect.
   voices [query...]          List/search voices; populates local cache.
+  plan                       Show the ElevenLabs plan and whether audio
+                              must credit ElevenLabs (free plan only).
 
 Common options:
   --output PATH              Explicit output path or directory.
@@ -1713,6 +1715,57 @@ async function runVoicesList(parsed, deps = {}) {
 }
 
 // ────────────────────────────────────────────────────────────────────
+// Plan subcommand
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * Report the account's ElevenLabs plan, because only free-plan audio must
+ * credit ElevenLabs. Prints one JSON line:
+ *
+ *   {"plan":"free","creditRequired":true,"creditsLeft":9900,"creditLimit":10000}
+ *   {"plan":"creator","creditRequired":false,...}
+ *   {"plan":"unknown","creditRequired":null,"reason":"..."}
+ *
+ * "unknown" is not an error: a key restricted to generation can't read the
+ * subscription. The first generation with the default mp3_44100_128 settles
+ * it, since free accounts are limited to mp3_44100_64.
+ */
+async function runPlan(_parsed, deps = {}) {
+  const { fetchImpl = fetch, stdout = process.stdout } = deps;
+  const unknown = (reason) => ({ plan: 'unknown', creditRequired: null, reason });
+  let result;
+  try {
+    const response = await fetchImpl(`${BASE_URL}/v1/user/subscription`, {
+      headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY },
+      signal: AbortSignal.timeout(30_000),
+    });
+    let json = null;
+    if (response.ok) {
+      try { json = await response.json(); } catch (_e) { /* reported below */ }
+    }
+    const tier = json && typeof json.tier === 'string' ? json.tier : null;
+    if (tier) {
+      result = { plan: tier, creditRequired: tier === 'free' };
+      const { character_count: used, character_limit: limit } = json;
+      if (Number.isInteger(used) && Number.isInteger(limit)) {
+        result.creditsLeft = limit - used;
+        result.creditLimit = limit;
+      }
+    } else {
+      result = unknown(
+        response.ok ? "ElevenLabs' answer didn't include the plan"
+        : response.status === 401 || response.status === 403
+          ? "this key couldn't read the plan (it may be limited to generating audio, or it may be wrong)"
+          : `ElevenLabs answered ${response.status}`);
+    }
+  } catch (e) {
+    result = unknown(`couldn't reach ElevenLabs (${e && e.message ? e.message : e})`);
+  }
+  stdout.write(JSON.stringify(result) + '\n');
+  return result;
+}
+
+// ────────────────────────────────────────────────────────────────────
 // Main entry
 // ────────────────────────────────────────────────────────────────────
 
@@ -1778,6 +1831,12 @@ async function main(argv) {
     return;
   }
 
+  if (subcommand === 'plan') {
+    assertApiKey();
+    await runPlan(parsed);
+    return;
+  }
+
   // SFX: routes through runSFX (pre-network validation + dry-run + live).
   if (subcommand === 'sfx') {
     try {
@@ -1813,6 +1872,8 @@ module.exports = {
   parseArgs,
   FLAG_SPECS,
   SUBCOMMANDS,
+  // plan subcommand
+  runPlan,
   // http
   callElevenLabs,
   parseRetryAfter,
