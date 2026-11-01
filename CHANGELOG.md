@@ -9,6 +9,8 @@ The running version is shown by `--help` and `--version`, and recorded as
 
 ## v2026.11.1.2
 
+Fixes from a bug review ([#1](https://github.com/zeveck/audiogen/issues/1)):
+
 - A download that drops partway no longer leaves a truncated audio file
   behind, and with `--force` it no longer wipes the file being replaced.
   audiogen now saves into a `.part` file and renames it only once the
