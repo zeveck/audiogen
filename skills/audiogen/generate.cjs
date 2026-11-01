@@ -744,7 +744,8 @@ const MUSIC_WAV_REJECT_MSG =
  *
  * @param {object} parsed  Output of parseArgs.
  * @returns {{prompt: string, outputFormat: string, musicLengthMs: number,
- *           forceInstrumental: boolean, seed: number|undefined}}
+ *           forceInstrumental: boolean, seed: number|undefined,
+ *           modelId: string|undefined}}
  */
 function validateMusicOptions(parsed) {
   const { flags, positionals } = parsed;
@@ -811,6 +812,7 @@ function validateMusicOptions(parsed) {
     musicLengthMs,
     forceInstrumental: !!flags.forceInstrumental,
     seed,
+    modelId: flags.modelId || undefined,
   };
 }
 
@@ -823,6 +825,7 @@ function validateMusicOptions(parsed) {
  * @param {number} opts.musicLengthMs
  * @param {boolean} opts.forceInstrumental
  * @param {number} [opts.seed]
+ * @param {string} [opts.modelId]  sent as model_id when --model-id is given
  * @returns {{url: string, body: object}}
  */
 function buildMusicRequest({
@@ -831,6 +834,7 @@ function buildMusicRequest({
   musicLengthMs,
   forceInstrumental,
   seed,
+  modelId,
 }) {
   const url = `${BASE_URL}/v1/music?output_format=${encodeURIComponent(outputFormat)}`;
   const body = {
@@ -839,6 +843,7 @@ function buildMusicRequest({
   };
   if (forceInstrumental) body.force_instrumental = true;
   if (seed !== undefined) body.seed = seed;
+  if (modelId) body.model_id = modelId;
   return { url, body };
 }
 
@@ -914,7 +919,7 @@ async function runMusic(parsed, deps = {}) {
     music_length_ms: opts.musicLengthMs,
     output_format: opts.outputFormat,
     output_path: savedPath,
-    model_id: flags.modelId || 'music_v1 (server default)',
+    model_id: opts.modelId || 'music_v1 (server default)',
   };
   if (opts.forceInstrumental) record.force_instrumental = true;
   if (opts.seed !== undefined) record.seed = opts.seed;

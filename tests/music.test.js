@@ -548,6 +548,17 @@ describe('runMusic live (stubbed fetch)', () => {
     const rec = JSON.parse(histLines[0]);
     assert.ok(rec.output_path.endsWith('x-v2.mp3'));
   });
+
+  it('--model-id is sent to ElevenLabs, not just written to the history', async () => {
+    const parsed = parseArgs(['music', 'calm', '--model-id', 'music_v2']);
+    const fetchImpl = fetchScript([makeResponse({ bodyBytes: Buffer.from('A') })]);
+    const r = await runCatching(() => runMusic(parsed, { fetchImpl, stdout: makeCaptureStream() }));
+    assert.equal(r.exitCode, null, `stderr=${r.stderr}`);
+    const sent = JSON.parse(fetchImpl.calls[0].init.body);
+    assert.equal(sent.model_id, 'music_v2');
+    const rec = JSON.parse(fs.readFileSync(path.join(tmp, '.audiogen-history.jsonl'), 'utf8').trim());
+    assert.equal(rec.model_id, 'music_v2');
+  });
 });
 
 // ── CLI integration: parser-level rejections via real subprocess ──
