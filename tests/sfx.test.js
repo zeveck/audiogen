@@ -654,6 +654,89 @@ describe('runSFX live (stubbed fetch)', () => {
   });
 });
 
+describe('runSFX download safety + PCM as WAV (stubbed fetch)', () => {
+  let tmp;
+  let origCwd;
+  let origKey;
+
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'audiogen-sfx-download-'));
+    origCwd = process.cwd();
+    origKey = process.env.ELEVENLABS_API_KEY;
+    process.env.ELEVENLABS_API_KEY = 'test-key';
+    process.chdir(tmp);
+  });
+
+  afterEach(() => {
+    process.chdir(origCwd);
+    if (origKey === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = origKey;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const droppedDownload = () => {
+    const r = makeResponse({ bodyBytes: Buffer.from('X') });
+    r.body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(Buffer.from('PARTIAL'));
+        controller.error(new Error('socket hang up'));
+      },
+    });
+    return r;
+  };
+
+  it('a dropped download with --force keeps the existing file and leaves no partial', async () => {
+    fs.mkdirSync('out');
+    fs.writeFileSync('out/boom.mp3', 'GOOD-OLD-AUDIO');
+    const parsed = parseArgs(['sfx', 'boom', '--output', 'out/boom.mp3', '--force']);
+    const r = await runCatching(() => runSFX(parsed, { fetchImpl: fetchScript([droppedDownload()]) }));
+    assert.equal(r.exitCode, 1);
+    assert.ok(r.stderr.includes('download interrupted'), `stderr=${r.stderr}`);
+    assert.equal(fs.readFileSync('out/boom.mp3', 'utf8'), 'GOOD-OLD-AUDIO');
+    assert.deepEqual(fs.readdirSync('out'), ['boom.mp3']);
+  });
+
+  it('a dropped download leaves no truncated file for the next run to version past', async () => {
+    const parsed = parseArgs(['sfx', 'zap']);
+    const r = await runCatching(() => runSFX(parsed, { fetchImpl: fetchScript([droppedDownload()]) }));
+    assert.equal(r.exitCode, 1);
+    assert.deepEqual(fs.readdirSync(path.join('assets', 'audio', 'sfx')), []);
+    const again = await runSFX(parseArgs(['sfx', 'zap']), {
+      fetchImpl: fetchScript([makeResponse({ bodyBytes: Buffer.from('ID3') })]),
+      stdout: makeCaptureStream(),
+    });
+    assert.equal(again.outputPath, path.join('assets', 'audio', 'sfx', 'zap.mp3'));
+  });
+
+  it('pcm_* saved as .wav gets a RIFF/WAVE header with the right rate', async () => {
+    const samples = Buffer.alloc(100);
+    const parsed = parseArgs(['sfx', 'hum', '--output-format', 'pcm_22050']);
+    const r = await runSFX(parsed, {
+      fetchImpl: fetchScript([makeResponse({ bodyBytes: samples })]),
+      stdout: makeCaptureStream(),
+    });
+    assert.ok(r.outputPath.endsWith('.wav'));
+    const file = fs.readFileSync(r.outputPath);
+    assert.equal(file.length, 144);
+    assert.equal(file.subarray(0, 4).toString('latin1'), 'RIFF');
+    assert.equal(file.subarray(8, 12).toString('latin1'), 'WAVE');
+    assert.equal(file.readUInt16LE(22), 1); // mono
+    assert.equal(file.readUInt32LE(24), 22050);
+    assert.equal(file.readUInt16LE(34), 16);
+    assert.equal(file.readUInt32LE(40), 100);
+  });
+
+  it('pcm_* to an explicit non-.wav path stays raw', async () => {
+    const samples = Buffer.alloc(10, 7);
+    const parsed = parseArgs(['sfx', 'hum', '--output-format', 'pcm_22050', '--output', 'hum.pcm']);
+    await runSFX(parsed, {
+      fetchImpl: fetchScript([makeResponse({ bodyBytes: samples })]),
+      stdout: makeCaptureStream(),
+    });
+    assert.deepEqual(fs.readFileSync('hum.pcm'), samples);
+  });
+});
+
 // ── CLI integration: parser-level rejections via real subprocess ──
 
 describe('runSFX v3 fallback (stubbed fetch)', () => {

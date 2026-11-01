@@ -1,6 +1,6 @@
 {
   "name": "audiogen",
-  "version": "2026.11.1",
+  "version": "2026.11.1.2",
   "description": "Generate game audio (music, voice lines, sound effects) with ElevenLabs through a zero-dependency CLI. Requires an ELEVENLABS_API_KEY.",
   "author": { "name": "zeveck" },
   "homepage": "https://github.com/zeveck/audiogen",

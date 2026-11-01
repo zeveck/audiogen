@@ -7,6 +7,17 @@ so on (`v2026.10.11.2`).
 The running version is shown by `--help` and `--version`, and recorded as
 `audiogenVersion` in every `.audiogen-history.jsonl` entry.
 
+## v2026.11.1.2
+
+- A download that drops partway no longer leaves a truncated audio file
+  behind, and with `--force` it no longer wipes the file being replaced.
+  audiogen now saves into a `.part` file and renames it only once the
+  download is complete.
+- `pcm_*` output saved as `.wav` is now a real WAV file. ElevenLabs sends
+  raw 16-bit samples with no header, which players and game engines can't
+  open; audiogen now adds the WAV header. An explicit non-`.wav` `--output`
+  keeps the raw samples.
+
 ## v2026.11.1
 
 - Sound effects now use ElevenLabs' `eleven_text_to_sound_v3` by default.

@@ -17,7 +17,7 @@ const { pipeline } = require('node:stream/promises');
 // Release version (CalVer YYYY.M.D, valid semver). Keep in sync with
 // skills/.claude-plugin/plugin.json and the top heading of CHANGELOG.md; a test
 // enforces this.
-const AUDIOGEN_VERSION = '2026.11.1';
+const AUDIOGEN_VERSION = '2026.11.1.2';
 
 // ────────────────────────────────────────────────────────────────────
 // Errors
@@ -221,6 +221,36 @@ function resolveOutputPath({ type, prompt, outputOption, outputFormat, force, tz
 
 function mkdirpParent(outputPath) {
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+}
+
+/**
+ * ElevenLabs pcm_<rate> responses are headerless 16-bit little-endian mono
+ * samples. When they're saved under a .wav name, return the sample rate so
+ * the download gets a WAV header; otherwise undefined (raw bytes kept).
+ */
+function pcmSampleRateFor(outputFormat, outputPath) {
+  const m = /^pcm_(\d+)$/.exec(outputFormat || '');
+  if (!m || !/\.wav$/i.test(outputPath || '')) return undefined;
+  return Number(m[1]);
+}
+
+/** 44-byte RIFF/WAVE header for `dataBytes` of 16-bit mono PCM. */
+function wavHeaderForPcm(dataBytes, sampleRate) {
+  const h = Buffer.alloc(44);
+  h.write('RIFF', 0, 'latin1');
+  h.writeUInt32LE(36 + dataBytes, 4);
+  h.write('WAVE', 8, 'latin1');
+  h.write('fmt ', 12, 'latin1');
+  h.writeUInt32LE(16, 16); // fmt chunk size
+  h.writeUInt16LE(1, 20); // PCM
+  h.writeUInt16LE(1, 22); // mono
+  h.writeUInt32LE(sampleRate, 24);
+  h.writeUInt32LE(sampleRate * 2, 28); // byte rate
+  h.writeUInt16LE(2, 32); // block align
+  h.writeUInt16LE(16, 34); // bits per sample
+  h.write('data', 36, 'latin1');
+  h.writeUInt32LE(dataBytes, 40);
+  return h;
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -609,19 +639,37 @@ async function callElevenLabs(opts) {
     if (!outputPath) {
       fail('internal error: binary response requires outputPath');
     }
+    // Stream into a .part file and rename on success, so a dropped download
+    // never leaves a truncated file behind or clobbers a --force target.
     mkdirpParent(outputPath);
-    const ws = fs.createWriteStream(outputPath);
-    await pipeline(Readable.fromWeb(response.body), ws);
-    const stat = fs.statSync(outputPath);
-    if (stat.size === 0) {
+    const partPath = `${outputPath}.part`;
+    const removePart = () => {
       try {
-        fs.unlinkSync(outputPath);
+        fs.unlinkSync(partPath);
       } catch (_e) {}
+    };
+    try {
+      await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(partPath));
+    } catch (e) {
+      removePart();
+      fail(`download interrupted: ${e && e.message ? e.message : e}; nothing was saved, retry.`, {
+        endpoint: `${method} ${url}`,
+        'request-id': requestId,
+      });
+    }
+    if (fs.statSync(partPath).size === 0) {
+      removePart();
       fail('empty audio response; refine prompt or retry.', {
         endpoint: `${method} ${url}`,
         'request-id': requestId,
       });
     }
+    if (opts.pcmSampleRate) {
+      const data = fs.readFileSync(partPath);
+      fs.writeFileSync(partPath, Buffer.concat([wavHeaderForPcm(data.length, opts.pcmSampleRate), data]));
+    }
+    fs.renameSync(partPath, outputPath);
+    const stat = fs.statSync(outputPath);
     return { requestId, bytesWritten: stat.size };
   }
 
@@ -807,6 +855,7 @@ async function runMusic(parsed, deps = {}) {
     body,
     outputPath,
     responseType: 'binary',
+    pcmSampleRate: pcmSampleRateFor(opts.outputFormat, outputPath),
   };
   if (fetchImpl) callOpts.fetchImpl = fetchImpl;
 
@@ -1174,6 +1223,7 @@ async function runTTS(parsed, deps = {}) {
     body,
     outputPath,
     responseType: 'binary',
+    pcmSampleRate: pcmSampleRateFor(opts.outputFormat, outputPath),
   };
   if (fetchImpl) callOpts.fetchImpl = fetchImpl;
 
@@ -1391,6 +1441,7 @@ async function runSFX(parsed, deps = {}) {
     body,
     outputPath,
     responseType: 'binary',
+    pcmSampleRate: pcmSampleRateFor(opts.outputFormat, outputPath),
   };
   if (fetchImpl) callOpts.fetchImpl = fetchImpl;
   if (!flags.modelId) {
@@ -1887,6 +1938,8 @@ module.exports = {
   extFromOutputFormat,
   resolveOutputPath,
   mkdirpParent,
+  pcmSampleRateFor,
+  wavHeaderForPcm,
   // history
   appendHistory,
   // args
