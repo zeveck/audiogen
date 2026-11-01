@@ -7,6 +7,13 @@ so on (`v2026.10.11.2`).
 The running version is shown by `--help` and `--version`, and recorded as
 `audiogenVersion` in every `.audiogen-history.jsonl` entry.
 
+## v2026.11.1.4
+
+Fix from a third bug review ([#3](https://github.com/zeveck/audiogen/issues/3)):
+
+- `music --model-id` is now sent to ElevenLabs. Before, it was ignored, but
+  the history recorded it as if it had been used.
+
 ## v2026.11.1.3
 
 Fixes from a second bug review ([#2](https://github.com/zeveck/audiogen/issues/2)):
