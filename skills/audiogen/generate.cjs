@@ -1285,7 +1285,7 @@ const SFX_WAV_REJECT_MSG =
 const SFX_LOOP_MODEL_REJECT_MSG =
   '--loop needs eleven_text_to_sound_v3 (or eleven_text_to_sound_v2, until February 1, 2027).';
 const SFX_FALLBACK_NOTE =
-  'SFX v3 isn\'t available on this account, so this used eleven_text_to_sound_v2, which ElevenLabs retires on February 1, 2027.';
+  'SFX v3 isn\'t available on this account, so retrying with eleven_text_to_sound_v2, which ElevenLabs retires on February 1, 2027.';
 
 /**
  * Validate and normalize sfx-subcommand options. Uses fail() on any
