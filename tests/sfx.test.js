@@ -26,6 +26,7 @@ const {
   SFX_PROMPT_INFLUENCE_DEFAULT,
   SFX_WAV_REJECT_MSG,
   SFX_LOOP_MODEL_REJECT_MSG,
+  SFX_FALLBACK_NOTE,
 } = require(gen);
 
 // ── Helpers (mirrors music.test.js / voice.test.js) ────────────────
@@ -134,7 +135,7 @@ describe('validateSFXOptions', () => {
       assert.equal(opts.promptInfluence, 0.3);
       assert.equal(opts.loop, false);
       assert.equal(opts.modelId, SFX_DEFAULT_MODEL_ID);
-      assert.equal(opts.modelId, 'eleven_text_to_sound_v2');
+      assert.equal(opts.modelId, 'eleven_text_to_sound_v3');
       assert.equal(opts.outputFormat, SFX_DEFAULT_OUTPUT_FORMAT);
       assert.equal(opts.outputFormat, 'mp3_44100_128');
       assert.equal(opts.durationSeconds, undefined);
@@ -257,17 +258,17 @@ describe('validateSFXOptions', () => {
     }
   });
 
-  it('--loop without explicit --model-id uses default v2 model and sets loop=true', async () => {
+  it('--loop without explicit --model-id uses default v3 model and sets loop=true', async () => {
     const parsed = parseArgs(['sfx', 'x', '--loop']);
     const r = await runCatching(() => {
       const opts = validateSFXOptions(parsed);
       assert.equal(opts.loop, true);
-      assert.equal(opts.modelId, 'eleven_text_to_sound_v2');
+      assert.equal(opts.modelId, 'eleven_text_to_sound_v3');
     });
     assert.equal(r.exitCode, null, `stderr=${r.stderr}`);
   });
 
-  it('--loop with explicit non-v2 model fails with documented message', async () => {
+  it('--loop with a model other than v3 or v2 fails with documented message', async () => {
     const parsed = parseArgs([
       'sfx', 'x', '--loop', '--model-id', 'eleven_text_to_sound_v1',
     ]);
@@ -412,7 +413,7 @@ describe('runSFX dry-run', () => {
     );
     assert.ok(stdout.buf.includes('"text":"door slam"'), `stdout=${stdout.buf}`);
     assert.ok(
-      stdout.buf.includes('"model_id":"eleven_text_to_sound_v2"'),
+      stdout.buf.includes('"model_id":"eleven_text_to_sound_v3"'),
       `stdout=${stdout.buf}`
     );
     assert.ok(stdout.buf.includes('"prompt_influence":0.3'), `stdout=${stdout.buf}`);
@@ -448,7 +449,7 @@ describe('runSFX dry-run', () => {
     assert.ok(stdout.buf.includes('"loop":true'), `stdout=${stdout.buf}`);
     assert.ok(stdout.buf.includes('"prompt_influence":0.6'), `stdout=${stdout.buf}`);
     assert.ok(
-      stdout.buf.includes('"model_id":"eleven_text_to_sound_v2"'),
+      stdout.buf.includes('"model_id":"eleven_text_to_sound_v3"'),
       `stdout=${stdout.buf}`
     );
   });
@@ -465,7 +466,7 @@ describe('runSFX dry-run', () => {
     assert.equal(r.exitCode, null, `stderr=${r.stderr}`);
     assert.ok(
       stdout.buf.includes(
-        '{"text":"door slam, reverb","model_id":"eleven_text_to_sound_v2","prompt_influence":0.3,"duration_seconds":2}'
+        '{"text":"door slam, reverb","model_id":"eleven_text_to_sound_v3","prompt_influence":0.3,"duration_seconds":2}'
       ),
       `stdout=${stdout.buf}`
     );
@@ -527,7 +528,7 @@ describe('runSFX live (stubbed fetch)', () => {
     assert.equal(rec.duration_seconds, 2);
     assert.equal(rec.loop, true);
     assert.equal(rec.prompt_influence, 0.3);
-    assert.equal(rec.model_id, 'eleven_text_to_sound_v2');
+    assert.equal(rec.model_id, 'eleven_text_to_sound_v3');
     assert.equal(rec.output_format, 'mp3_44100_128');
     assert.ok(rec.output_path.endsWith(path.join('assets', 'audio', 'sfx', 'door-slam.mp3')));
     assert.equal(rec.request_id, 'req-sfx-1');
@@ -547,7 +548,7 @@ describe('runSFX live (stubbed fetch)', () => {
     const sent = JSON.parse(call.init.body);
     assert.deepEqual(sent, {
       text: 'door slam',
-      model_id: 'eleven_text_to_sound_v2',
+      model_id: 'eleven_text_to_sound_v3',
       prompt_influence: 0.3,
       duration_seconds: 2,
       loop: true,
@@ -566,7 +567,7 @@ describe('runSFX live (stubbed fetch)', () => {
     const sent = JSON.parse(fetchImpl.calls[0].init.body);
     assert.deepEqual(sent, {
       text: 'whoosh',
-      model_id: 'eleven_text_to_sound_v2',
+      model_id: 'eleven_text_to_sound_v3',
       prompt_influence: 0.3,
     });
     assert.ok(!('duration_seconds' in sent));
@@ -655,6 +656,70 @@ describe('runSFX live (stubbed fetch)', () => {
 
 // ── CLI integration: parser-level rejections via real subprocess ──
 
+describe('runSFX v3 fallback (stubbed fetch)', () => {
+  let tmp;
+  let origCwd;
+  let origKey;
+
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'audiogen-sfx-fallback-'));
+    origCwd = process.cwd();
+    origKey = process.env.ELEVENLABS_API_KEY;
+    process.env.ELEVENLABS_API_KEY = 'test-key';
+    process.chdir(tmp);
+  });
+
+  afterEach(() => {
+    process.chdir(origCwd);
+    if (origKey === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = origKey;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const unknownModel = () => makeResponse({
+    status: 400,
+    statusText: 'Bad Request',
+    contentType: 'application/json',
+    bodyText: JSON.stringify({ detail: { status: 'invalid_model', message: 'Unknown model eleven_text_to_sound_v3' } }),
+  });
+
+  it('an account without v3 retries once on v2, says so, and records v2', async () => {
+    const parsed = parseArgs(['sfx', 'campfire', '--loop']);
+    const fetchImpl = fetchScript([unknownModel(), makeResponse({ bodyBytes: Buffer.from('OK') })]);
+    const stdout = makeCaptureStream();
+    const r = await runCatching(() => runSFX(parsed, { fetchImpl, stdout }));
+    assert.equal(r.exitCode, null, `stderr=${r.stderr}`);
+    assert.equal(fetchImpl.calls.length, 2);
+    assert.equal(JSON.parse(fetchImpl.calls[0].init.body).model_id, 'eleven_text_to_sound_v3');
+    const retry = JSON.parse(fetchImpl.calls[1].init.body);
+    assert.equal(retry.model_id, 'eleven_text_to_sound_v2');
+    assert.equal(retry.loop, true);
+    assert.ok(r.stderr.includes(SFX_FALLBACK_NOTE), `stderr=${r.stderr}`);
+    const rec = JSON.parse(fs.readFileSync(path.join(tmp, '.audiogen-history.jsonl'), 'utf8').trim());
+    assert.equal(rec.model_id, 'eleven_text_to_sound_v2');
+  });
+
+  it('an explicit --model-id never falls back', async () => {
+    const parsed = parseArgs(['sfx', 'campfire', '--model-id', 'eleven_text_to_sound_v3']);
+    const fetchImpl = fetchScript([unknownModel()]);
+    const r = await runCatching(() => runSFX(parsed, { fetchImpl }));
+    assert.equal(r.exitCode, 1);
+    assert.equal(fetchImpl.calls.length, 1);
+    assert.ok(r.stderr.includes('ElevenLabs request failed (400)'), `stderr=${r.stderr}`);
+  });
+
+  it('other 400s are not treated as a missing model', async () => {
+    const parsed = parseArgs(['sfx', 'campfire']);
+    const fetchImpl = fetchScript([makeResponse({
+      status: 400, statusText: 'Bad Request', contentType: 'application/json',
+      bodyText: JSON.stringify({ detail: { message: 'Text is too long' } }),
+    })]);
+    const r = await runCatching(() => runSFX(parsed, { fetchImpl }));
+    assert.equal(r.exitCode, 1);
+    assert.equal(fetchImpl.calls.length, 1);
+  });
+});
+
 describe('sfx CLI integration', () => {
   it('AC: dry-run body with --duration 2.0 prints exact JSON', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'audiogen-sfx-cli-'));
@@ -673,7 +738,7 @@ describe('sfx CLI integration', () => {
       );
       assert.ok(
         out.includes(
-          '{"text":"door slam, reverb","model_id":"eleven_text_to_sound_v2","prompt_influence":0.3,"duration_seconds":2}'
+          '{"text":"door slam, reverb","model_id":"eleven_text_to_sound_v3","prompt_influence":0.3,"duration_seconds":2}'
         ),
         `out=${out}`
       );

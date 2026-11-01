@@ -7,6 +7,13 @@ so on (`v2026.10.11.2`).
 The running version is shown by `--help` and `--version`, and recorded as
 `audiogenVersion` in every `.audiogen-history.jsonl` entry.
 
+## v2026.11.1
+
+- Sound effects now use ElevenLabs' `eleven_text_to_sound_v3` by default.
+  ElevenLabs has deprecated v2 and retires it on February 1, 2027. `--loop`
+  works on v3. If an account doesn't have v3 yet, audiogen falls back to v2
+  once, says so, and records the model it used in the history.
+
 ## v2026.10.31
 
 - audiogen no longer assumes the free ElevenLabs plan. A new `plan`

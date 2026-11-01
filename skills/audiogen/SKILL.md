@@ -133,9 +133,13 @@ Generates one sound effect via `POST /v1/sound-generation`.
 - `--duration` — **0.5 to 30 seconds**. Optional — omit to let the API
   auto-pick a duration. The 30-second ceiling is a hard API limit; for
   longer ambience, generate a loopable clip and repeat in-engine.
-- `--loop` — native API flag (requires the `eleven_text_to_sound_v2`
-  model, which is the default). Produces a seamlessly loopable
-  waveform.
+- `--loop` — native API flag. Produces a seamlessly loopable
+  waveform. Works on the default `eleven_text_to_sound_v3` (and on
+  `eleven_text_to_sound_v2` until ElevenLabs retires it on February 1,
+  2027).
+- Model: `eleven_text_to_sound_v3` by default. If an account doesn't
+  have v3 yet, audiogen falls back to v2 once and says so on stderr;
+  tell the user v2 stops working on February 1, 2027.
 - `--prompt-influence` — 0–1. Default `0.3`. Higher = closer adherence
   to the prompt; lower = more creative latitude.
 - `--output-format` — `mp3_*`, `pcm_*`, `opus_*`, `ulaw_*`, `alaw_*`.
@@ -300,7 +304,7 @@ generation** — you got the audio, the bookkeeping is best-effort.
   the game engine or HTML `<audio loop>`. For a natively seamless
   loop, you need to craft a `composition_plan` (not exposed in this
   CLI — use the raw ElevenLabs API or their web UI).
-- **SFX has native `--loop`** on the default `eleven_text_to_sound_v2`
+- **SFX has native `--loop`** on the default `eleven_text_to_sound_v3`
   model. Produces a clip with matching start/end so it can repeat
   seamlessly in-engine.
 

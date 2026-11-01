@@ -17,7 +17,7 @@ const { pipeline } = require('node:stream/promises');
 // Release version (CalVer YYYY.M.D, valid semver). Keep in sync with
 // skills/.claude-plugin/plugin.json and the top heading of CHANGELOG.md; a test
 // enforces this.
-const AUDIOGEN_VERSION = '2026.10.31';
+const AUDIOGEN_VERSION = '2026.11.1';
 
 // ────────────────────────────────────────────────────────────────────
 // Errors
@@ -407,7 +407,7 @@ Voice-only:
 
 SFX-only:
   --duration N               0.5-30 seconds. Optional (API auto-derives).
-  --loop                     Native API flag (v2 model only).
+  --loop                     Seamless loop (eleven_text_to_sound_v3, the default, or v2).
   --prompt-influence N       0-1. Default 0.3.
 
 Voices-only:
@@ -569,6 +569,17 @@ async function callElevenLabs(opts) {
       ) {
         details.hint =
           'Free-tier accounts are restricted to mp3_44100_64. Try --output-format mp3_44100_64.';
+      }
+      // An account without the default model retries once on the fallback.
+      if (
+        opts.fallback &&
+        [400, 403, 404, 422].includes(response.status) &&
+        typeof message === 'string' &&
+        /model/i.test(message)
+      ) {
+        process.stderr.write(`audiogen: ${opts.fallback.note}\n`);
+        const retried = await callElevenLabs({ ...opts, body: opts.fallback.body, fallback: undefined });
+        return { ...retried, fallbackUsed: true };
       }
       fail(`ElevenLabs request failed (${response.status})`, details);
     }
@@ -1212,13 +1223,19 @@ const SFX_DURATION_MAX_S = 30;
 const SFX_PROMPT_INFLUENCE_DEFAULT = 0.3;
 const SFX_PROMPT_INFLUENCE_MIN = 0;
 const SFX_PROMPT_INFLUENCE_MAX = 1;
-const SFX_DEFAULT_MODEL_ID = 'eleven_text_to_sound_v2';
+// ElevenLabs deprecated v2; it keeps working until February 1, 2027. v3 is
+// in limited access, so an account without it falls back to v2 until then.
+const SFX_DEFAULT_MODEL_ID = 'eleven_text_to_sound_v3';
+const SFX_FALLBACK_MODEL_ID = 'eleven_text_to_sound_v2';
+const SFX_LOOP_MODELS = new Set([SFX_DEFAULT_MODEL_ID, SFX_FALLBACK_MODEL_ID]);
 const SFX_DEFAULT_OUTPUT_FORMAT = 'mp3_44100_128';
 
 const SFX_WAV_REJECT_MSG =
   'Sound-generation endpoint does not support WAV output. Use mp3_* or pcm_*.';
 const SFX_LOOP_MODEL_REJECT_MSG =
-  '--loop is only supported by eleven_text_to_sound_v2.';
+  '--loop needs eleven_text_to_sound_v3 (or eleven_text_to_sound_v2, until February 1, 2027).';
+const SFX_FALLBACK_NOTE =
+  'SFX v3 isn\'t available on this account, so this used eleven_text_to_sound_v2, which ElevenLabs retires on February 1, 2027.';
 
 /**
  * Validate and normalize sfx-subcommand options. Uses fail() on any
@@ -1283,12 +1300,12 @@ function validateSFXOptions(parsed) {
     promptInfluence = n;
   }
 
-  // --model-id: default to v2.
+  // --model-id: default to v3.
   const modelId = flags.modelId || SFX_DEFAULT_MODEL_ID;
 
-  // --loop + non-v2 model combination is rejected.
+  // --loop works on v3 and v2 only.
   const loop = !!flags.loop;
-  if (loop && modelId !== SFX_DEFAULT_MODEL_ID) {
+  if (loop && !SFX_LOOP_MODELS.has(modelId)) {
     fail(SFX_LOOP_MODEL_REJECT_MSG);
   }
 
@@ -1376,8 +1393,12 @@ async function runSFX(parsed, deps = {}) {
     responseType: 'binary',
   };
   if (fetchImpl) callOpts.fetchImpl = fetchImpl;
+  if (!flags.modelId) {
+    callOpts.fallback = { body: { ...body, model_id: SFX_FALLBACK_MODEL_ID }, note: SFX_FALLBACK_NOTE };
+  }
 
   const result = await callElevenLabs(callOpts);
+  const usedModel = result && result.fallbackUsed ? SFX_FALLBACK_MODEL_ID : opts.modelId;
 
   // History record — best-effort; failures surface as stderr warnings only.
   const record = {
@@ -1386,7 +1407,7 @@ async function runSFX(parsed, deps = {}) {
     type: 'sfx',
     phase: 'sfx',
     text: opts.text,
-    model_id: opts.modelId,
+    model_id: usedModel,
     prompt_influence: opts.promptInfluence,
     loop: opts.loop,
     output_format: opts.outputFormat,
@@ -1926,6 +1947,8 @@ module.exports = {
   SFX_DEFAULT_OUTPUT_FORMAT,
   SFX_WAV_REJECT_MSG,
   SFX_LOOP_MODEL_REJECT_MSG,
+  SFX_FALLBACK_MODEL_ID,
+  SFX_FALLBACK_NOTE,
   // main (for integration tests)
   main,
 };
