@@ -7,6 +7,15 @@ so on (`v2026.10.11.2`).
 The running version is shown by `--help` and `--version`, and recorded as
 `audiogenVersion` in every `.audiogen-history.jsonl` entry.
 
+## v2026.11.1.3
+
+Fixes from a second bug review ([#2](https://github.com/zeveck/audiogen/issues/2)):
+
+- Running the same prompt several times at once (say, three takes of one
+  sound) keeps every take: each run saves to its own file (`-v2`, `-v3`)
+  instead of the runs overwriting each other, or one crashing after it had
+  been paid for.
+
 ## v2026.11.1.2
 
 Fixes from a bug review ([#1](https://github.com/zeveck/audiogen/issues/1)):
