@@ -11,6 +11,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 
@@ -184,24 +185,30 @@ function extFromOutputFormat(fmt) {
  * @param {string} [opts.tz]
  */
 function resolveOutputPath({ type, prompt, outputOption, outputFormat, force, tz }) {
+  const base = resolveOutputBase({ type, prompt, outputOption, outputFormat, tz });
+  return force ? base : firstFreeVersion(base);
+}
+
+/** The unversioned output path (see resolveOutputPath). */
+function resolveOutputBase({ type, prompt, outputOption, outputFormat, tz }) {
   const ext = extFromOutputFormat(outputFormat);
   const slug = slugify(prompt, tz);
 
-  let base;
   if (outputOption) {
     const looksLikeDir =
       outputOption.endsWith('/') ||
       (fs.existsSync(outputOption) && fs.statSync(outputOption).isDirectory());
     if (looksLikeDir) {
-      base = path.join(outputOption.replace(/\/+$/, ''), `${slug}.${ext}`);
-    } else {
-      base = outputOption;
+      return path.join(outputOption.replace(/\/+$/, ''), `${slug}.${ext}`);
     }
-  } else {
-    base = path.join('assets', 'audio', type, `${slug}.${ext}`);
+    return outputOption;
   }
+  return path.join('assets', 'audio', type, `${slug}.${ext}`);
+}
 
-  if (force || !fs.existsSync(base)) return base;
+/** `base` if it doesn't exist, else the first free <stem>-vN<ext> (N = 2..999). */
+function firstFreeVersion(base) {
+  if (!fs.existsSync(base)) return base;
 
   // Auto-version: split extension off of `base`.
   const dir = path.dirname(base);
@@ -641,8 +648,10 @@ async function callElevenLabs(opts) {
     }
     // Stream into a .part file and rename on success, so a dropped download
     // never leaves a truncated file behind or clobbers a --force target.
+    // The .part name is unique per run: two runs that resolved the same
+    // output path (same prompt, launched together) must not share it.
     mkdirpParent(outputPath);
-    const partPath = `${outputPath}.part`;
+    const partPath = `${outputPath}.${process.pid}-${crypto.randomBytes(4).toString('hex')}.part`;
     const removePart = () => {
       try {
         fs.unlinkSync(partPath);
@@ -668,9 +677,11 @@ async function callElevenLabs(opts) {
       const data = fs.readFileSync(partPath);
       fs.writeFileSync(partPath, Buffer.concat([wavHeaderForPcm(data.length, opts.pcmSampleRate), data]));
     }
-    fs.renameSync(partPath, outputPath);
-    const stat = fs.statSync(outputPath);
-    return { requestId, bytesWritten: stat.size };
+    const finalPath = opts.versionBase
+      ? claimVersionedPath(partPath, outputPath, opts.versionBase)
+      : (fs.renameSync(partPath, outputPath), outputPath);
+    const stat = fs.statSync(finalPath);
+    return { requestId, bytesWritten: stat.size, outputPath: finalPath };
   }
 
   // Exhausted retries with retryable statuses.
@@ -678,6 +689,35 @@ async function callElevenLabs(opts) {
     endpoint: `${method} ${url}`,
     detail: lastErr && lastErr.message,
   });
+}
+
+/**
+ * Move a finished download from `partPath` to `outputPath` without
+ * overwriting anything. If another run took `outputPath` while this one
+ * was downloading, take the next free version of `versionBase` instead.
+ * Returns the path the audio ended up at.
+ */
+function claimVersionedPath(partPath, outputPath, versionBase) {
+  let target = outputPath;
+  for (let i = 0; i < 1000; i++) {
+    try {
+      fs.linkSync(partPath, target); // fails with EEXIST instead of overwriting
+      fs.unlinkSync(partPath);
+      return target;
+    } catch (e) {
+      if (!e || e.code !== 'EEXIST') {
+        // No hard links on this filesystem: check, then rename.
+        if (fs.existsSync(target)) {
+          target = firstFreeVersion(versionBase);
+          continue;
+        }
+        fs.renameSync(partPath, target);
+        return target;
+      }
+      target = firstFreeVersion(versionBase);
+    }
+  }
+  fail(`could not find a free file name for ${versionBase}; pass --output explicitly.`);
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -830,14 +870,14 @@ async function runMusic(parsed, deps = {}) {
 
   const { url, body } = buildMusicRequest(opts);
 
-  const outputPath = resolveOutputPath({
+  const outputBase = resolveOutputBase({
     type: 'music',
     prompt: opts.prompt,
     outputOption: flags.output,
     outputFormat: opts.outputFormat,
-    force: !!flags.force,
     tz: 'America/New_York',
   });
+  const outputPath = flags.force ? outputBase : firstFreeVersion(outputBase);
 
   if (flags.dryRun) {
     stdout.write('audiogen dry-run (music)\n');
@@ -856,10 +896,13 @@ async function runMusic(parsed, deps = {}) {
     outputPath,
     responseType: 'binary',
     pcmSampleRate: pcmSampleRateFor(opts.outputFormat, outputPath),
+    // Without --force, never overwrite a file another run saved meanwhile.
+    versionBase: flags.force ? undefined : outputBase,
   };
   if (fetchImpl) callOpts.fetchImpl = fetchImpl;
 
   const result = await callElevenLabs(callOpts);
+  const savedPath = (result && result.outputPath) || outputPath;
 
   // History record — best-effort; failures surface as stderr warnings only.
   const record = {
@@ -870,7 +913,7 @@ async function runMusic(parsed, deps = {}) {
     prompt: opts.prompt,
     music_length_ms: opts.musicLengthMs,
     output_format: opts.outputFormat,
-    output_path: outputPath,
+    output_path: savedPath,
     model_id: flags.modelId || 'music_v1 (server default)',
   };
   if (opts.forceInstrumental) record.force_instrumental = true;
@@ -886,8 +929,8 @@ async function runMusic(parsed, deps = {}) {
     appendHistoryFn(record);
   }
 
-  stdout.write(`${outputPath}\n`);
-  return { url, body, outputPath, dryRun: false, result };
+  stdout.write(`${savedPath}\n`);
+  return { url, body, outputPath: savedPath, dryRun: false, result };
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -1199,14 +1242,14 @@ async function runTTS(parsed, deps = {}) {
   const { url, body } = buildVoiceRequest(opts);
 
   const { flags } = parsed;
-  const outputPath = resolveOutputPath({
+  const outputBase = resolveOutputBase({
     type: 'voice',
     prompt: opts.text,
     outputOption: flags.output,
     outputFormat: opts.outputFormat,
-    force: !!flags.force,
     tz: 'America/New_York',
   });
+  const outputPath = flags.force ? outputBase : firstFreeVersion(outputBase);
 
   if (flags.dryRun) {
     stdout.write('audiogen dry-run (voice)\n');
@@ -1224,10 +1267,13 @@ async function runTTS(parsed, deps = {}) {
     outputPath,
     responseType: 'binary',
     pcmSampleRate: pcmSampleRateFor(opts.outputFormat, outputPath),
+    // Without --force, never overwrite a file another run saved meanwhile.
+    versionBase: flags.force ? undefined : outputBase,
   };
   if (fetchImpl) callOpts.fetchImpl = fetchImpl;
 
   const result = await callElevenLabs(callOpts);
+  const savedPath = (result && result.outputPath) || outputPath;
 
   const record = {
     audiogenVersion: AUDIOGEN_VERSION,
@@ -1238,7 +1284,7 @@ async function runTTS(parsed, deps = {}) {
     text: opts.text,
     model_id: opts.modelId,
     output_format: opts.outputFormat,
-    output_path: outputPath,
+    output_path: savedPath,
   };
   if (opts.voiceName) record.voice_name = opts.voiceName;
   if (opts.languageCode) record.language_code = opts.languageCode;
@@ -1255,8 +1301,8 @@ async function runTTS(parsed, deps = {}) {
     appendHistoryFn(record);
   }
 
-  stdout.write(`${outputPath}\n`);
-  return { url, body, outputPath, dryRun: false, result };
+  stdout.write(`${savedPath}\n`);
+  return { url, body, outputPath: savedPath, dryRun: false, result };
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -1416,14 +1462,14 @@ async function runSFX(parsed, deps = {}) {
 
   const { url, body } = buildSFXRequest(opts);
 
-  const outputPath = resolveOutputPath({
+  const outputBase = resolveOutputBase({
     type: 'sfx',
     prompt: opts.text,
     outputOption: flags.output,
     outputFormat: opts.outputFormat,
-    force: !!flags.force,
     tz: 'America/New_York',
   });
+  const outputPath = flags.force ? outputBase : firstFreeVersion(outputBase);
 
   if (flags.dryRun) {
     stdout.write('audiogen dry-run (sfx)\n');
@@ -1442,6 +1488,8 @@ async function runSFX(parsed, deps = {}) {
     outputPath,
     responseType: 'binary',
     pcmSampleRate: pcmSampleRateFor(opts.outputFormat, outputPath),
+    // Without --force, never overwrite a file another run saved meanwhile.
+    versionBase: flags.force ? undefined : outputBase,
   };
   if (fetchImpl) callOpts.fetchImpl = fetchImpl;
   if (!flags.modelId) {
@@ -1449,6 +1497,7 @@ async function runSFX(parsed, deps = {}) {
   }
 
   const result = await callElevenLabs(callOpts);
+  const savedPath = (result && result.outputPath) || outputPath;
   const usedModel = result && result.fallbackUsed ? SFX_FALLBACK_MODEL_ID : opts.modelId;
 
   // History record — best-effort; failures surface as stderr warnings only.
@@ -1462,7 +1511,7 @@ async function runSFX(parsed, deps = {}) {
     prompt_influence: opts.promptInfluence,
     loop: opts.loop,
     output_format: opts.outputFormat,
-    output_path: outputPath,
+    output_path: savedPath,
   };
   if (opts.durationSeconds !== undefined) record.duration_seconds = opts.durationSeconds;
   if (flags.historyId) record.history_id = flags.historyId;
@@ -1476,8 +1525,8 @@ async function runSFX(parsed, deps = {}) {
     appendHistoryFn(record);
   }
 
-  stdout.write(`${outputPath}\n`);
-  return { url, body, outputPath, dryRun: false, result };
+  stdout.write(`${savedPath}\n`);
+  return { url, body, outputPath: savedPath, dryRun: false, result };
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -1937,6 +1986,8 @@ module.exports = {
   timestampSlug,
   extFromOutputFormat,
   resolveOutputPath,
+  resolveOutputBase,
+  firstFreeVersion,
   mkdirpParent,
   pcmSampleRateFor,
   wavHeaderForPcm,

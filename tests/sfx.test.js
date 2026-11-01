@@ -735,6 +735,76 @@ describe('runSFX download safety + PCM as WAV (stubbed fetch)', () => {
     });
     assert.deepEqual(fs.readFileSync('hum.pcm'), samples);
   });
+
+  // A response whose body arrives in two chunks, calling `midway` between them.
+  const slowResponse = (bytes, midway) => {
+    const r = makeResponse({ bodyBytes: Buffer.from('X') });
+    let step = 0;
+    r.body = new ReadableStream({
+      async pull(controller) {
+        await new Promise((res) => setTimeout(res, 10));
+        if (step === 0) controller.enqueue(bytes.subarray(0, 2));
+        else if (step === 1) {
+          if (midway) midway();
+          controller.enqueue(bytes.subarray(2));
+        } else controller.close();
+        step++;
+      },
+    });
+    return r;
+  };
+
+  it('two runs of the same prompt at once each keep their own audio', async () => {
+    const runs = ['AAAAAAAA', 'BBBBBB', 'CCCC'].map((s) =>
+      runSFX(parseArgs(['sfx', 'coin pickup']), {
+        fetchImpl: fetchScript([slowResponse(Buffer.from(s))]),
+        stdout: makeCaptureStream(),
+      })
+    );
+    const results = await Promise.all(runs);
+    const paths = results.map((r) => r.outputPath);
+    assert.equal(new Set(paths).size, 3, `paths=${paths}`);
+    assert.deepEqual(results.map((r) => fs.readFileSync(r.outputPath, 'utf8')), ['AAAAAAAA', 'BBBBBB', 'CCCC']);
+    assert.deepEqual(fs.readdirSync(path.join('assets', 'audio', 'sfx')).sort(),
+      ['coin-pickup-v2.mp3', 'coin-pickup-v3.mp3', 'coin-pickup.mp3']);
+    const recorded = fs.readFileSync('.audiogen-history.jsonl', 'utf8').trim().split('\n')
+      .map((l) => JSON.parse(l).output_path).sort();
+    assert.deepEqual(recorded, paths.slice().sort());
+  });
+
+  for (const noHardLinks of [false, true]) {
+    it(`a file saved at the output path during the download is not overwritten${noHardLinks ? ' (no hard links)' : ''}`, async () => {
+      const origLink = fs.linkSync;
+      if (noHardLinks) {
+        fs.linkSync = () => { const e = new Error('EPERM'); e.code = 'EPERM'; throw e; };
+      }
+      try {
+        const stdout = makeCaptureStream();
+        const r = await runSFX(parseArgs(['sfx', 'zap', '--output', 'zap.mp3']), {
+          fetchImpl: fetchScript([slowResponse(Buffer.from('NEWAUDIO'), () => fs.writeFileSync('zap.mp3', 'OTHER'))]),
+          stdout,
+        });
+        assert.equal(fs.readFileSync('zap.mp3', 'utf8'), 'OTHER');
+        assert.equal(r.outputPath, 'zap-v2.mp3');
+        assert.equal(fs.readFileSync('zap-v2.mp3', 'utf8'), 'NEWAUDIO');
+        assert.equal(stdout.buf, 'zap-v2.mp3\n');
+        assert.ok(!fs.readdirSync('.').some((f) => f.endsWith('.part')));
+      } finally {
+        fs.linkSync = origLink;
+      }
+    });
+  }
+
+  it('--force still replaces the file at the output path', async () => {
+    fs.writeFileSync('zap.mp3', 'OLD');
+    const r = await runSFX(parseArgs(['sfx', 'zap', '--output', 'zap.mp3', '--force']), {
+      fetchImpl: fetchScript([makeResponse({ bodyBytes: Buffer.from('NEW') })]),
+      stdout: makeCaptureStream(),
+    });
+    assert.equal(r.outputPath, 'zap.mp3');
+    assert.equal(fs.readFileSync('zap.mp3', 'utf8'), 'NEW');
+    assert.deepEqual(fs.readdirSync('.').filter((f) => f.startsWith('zap')), ['zap.mp3']);
+  });
 });
 
 // ── CLI integration: parser-level rejections via real subprocess ──
