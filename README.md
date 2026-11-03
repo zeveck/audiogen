@@ -2,9 +2,10 @@
 
 Generate game audio — music, voices, and sound effects — from a single
 [Claude Code](https://github.com/anthropics/claude-code) skill. Backed
-by the [ElevenLabs](https://elevenlabs.io) API. Three files, zero npm
-deps, usable either as a `/audiogen` slash command inside an agent or as
-a standalone Node CLI from your terminal or CI job.
+by the [ElevenLabs](https://elevenlabs.io) API. Three files and no npm
+packages to install; you need Node 20.14+ and an ElevenLabs API key. Use
+it as a `/audiogen` slash command inside an agent or as a standalone Node
+CLI from your terminal or CI job.
 
 ---
 
@@ -200,8 +201,9 @@ Plus:
   expands these into full prompts when you name a style.
 - **Retry & backoff.** 429/500/502/503 retried 3× with
   `Retry-After` honored.
-- **Zero dependencies.** Uses Node 20.14+'s built-in `fetch` and
-  `process.loadEnvFile`. No `npm install` anywhere.
+- **No packages to install.** It uses only Node's built-ins (`fetch`,
+  `process.loadEnvFile`), so there's no `npm install`. You need Node
+  20.14 or later and an ElevenLabs API key.
 
 See [`SKILL.md`](skills/audiogen/SKILL.md) for the full prompt
 reference and edge-case catalogue.
@@ -271,6 +273,6 @@ secrets; it no-ops.
 
 Shape and spirit borrowed from
 [github.com/zeveck/imagegen](https://github.com/zeveck/imagegen) — the
-zero-dep, single-directory, three-file skill pattern fits generative
-media perfectly. audiogen's `generate.cjs` mirrors imagegen's env
+single-directory, three-file skill pattern with no npm packages fits
+generative media perfectly. audiogen's `generate.cjs` mirrors imagegen's env
 walker and retry discipline verbatim.
