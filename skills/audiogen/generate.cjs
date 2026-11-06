@@ -18,7 +18,7 @@ const { pipeline } = require('node:stream/promises');
 // Release version (CalVer YYYY.M.D, valid semver). Keep in sync with
 // skills/.claude-plugin/plugin.json and the top heading of CHANGELOG.md; a test
 // enforces this.
-const AUDIOGEN_VERSION = '2026.11.1.4';
+const AUDIOGEN_VERSION = '2026.11.6';
 
 // ────────────────────────────────────────────────────────────────────
 // Errors
@@ -420,7 +420,7 @@ Subcommands:
 Common options:
   --output PATH              Explicit output path or directory.
   --output-format FMT        Default mp3_44100_128.
-  --seed N                   Integer seed (where supported).
+  --seed N                   Integer seed (voice only).
   --model-id ID              Override the endpoint's default model.
   --dry-run                  Print resolved request + output path; no network.
   --force                    Overwrite existing output file (disables auto-version).
@@ -431,6 +431,7 @@ Common options:
 
 Music-only:
   --length-ms MS             3000-600000. Default 30000.
+                              Model: music_v2_5 unless --model-id.
   --force-instrumental       No vocals.
 
 Voice-only:
@@ -439,8 +440,10 @@ Voice-only:
   --language-code CODE       e.g. en, ja.
   --stability N              0-1.
   --similarity-boost N       0-1.
-  --style N                  0-1.
-  --speed N                  0.5-2.
+  --style N                  0-1. Ignored by eleven_v4 (the default).
+  --speed N                  0.5-2. Ignored by eleven_v4 (the default).
+                              Default model eleven_v4; direct delivery with
+                              tags like [whispering] or [shouting] instead.
 
 SFX-only:
   --duration N               0.5-30 seconds. Optional (API auto-derives).
@@ -732,6 +735,8 @@ const MUSIC_OUTPUT_FORMAT_RE =
 const MUSIC_LENGTH_MIN_MS = 3000;
 const MUSIC_LENGTH_MAX_MS = 600000;
 const MUSIC_LENGTH_DEFAULT_MS = 30000;
+// Sent explicitly: the API's own default, music_v1, is removed on 2027-01-31.
+const MUSIC_DEFAULT_MODEL_ID = 'music_v2_5';
 
 const MUSIC_LOOP_REJECT_MSG =
   'Music loops are not supported. Loop playback in your engine / HTML audio.';
@@ -787,17 +792,9 @@ function validateMusicOptions(parsed) {
     );
   }
 
-  // --seed: optional integer.
-  let seed;
+  // ElevenLabs only takes a seed with a composition plan, never with a prompt.
   if (flags.seed !== undefined) {
-    const raw = String(flags.seed);
-    if (!/^-?\d+$/.test(raw)) {
-      fail(`--seed must be an integer; got "${flags.seed}".`);
-    }
-    seed = Number(raw);
-    if (!Number.isFinite(seed)) {
-      fail(`--seed must be an integer; got "${flags.seed}".`);
-    }
+    fail('--seed does not work for music: ElevenLabs refuses a seed with a text prompt.');
   }
 
   // prompt: non-empty after trim.
@@ -811,8 +808,7 @@ function validateMusicOptions(parsed) {
     outputFormat,
     musicLengthMs,
     forceInstrumental: !!flags.forceInstrumental,
-    seed,
-    modelId: flags.modelId || undefined,
+    modelId: flags.modelId || MUSIC_DEFAULT_MODEL_ID,
   };
 }
 
@@ -824,8 +820,7 @@ function validateMusicOptions(parsed) {
  * @param {string} opts.outputFormat
  * @param {number} opts.musicLengthMs
  * @param {boolean} opts.forceInstrumental
- * @param {number} [opts.seed]
- * @param {string} [opts.modelId]  sent as model_id when --model-id is given
+ * @param {string} opts.modelId
  * @returns {{url: string, body: object}}
  */
 function buildMusicRequest({
@@ -833,17 +828,15 @@ function buildMusicRequest({
   outputFormat,
   musicLengthMs,
   forceInstrumental,
-  seed,
   modelId,
 }) {
   const url = `${BASE_URL}/v1/music?output_format=${encodeURIComponent(outputFormat)}`;
   const body = {
     prompt,
     music_length_ms: musicLengthMs,
+    model_id: modelId,
   };
   if (forceInstrumental) body.force_instrumental = true;
-  if (seed !== undefined) body.seed = seed;
-  if (modelId) body.model_id = modelId;
   return { url, body };
 }
 
@@ -919,10 +912,9 @@ async function runMusic(parsed, deps = {}) {
     music_length_ms: opts.musicLengthMs,
     output_format: opts.outputFormat,
     output_path: savedPath,
-    model_id: opts.modelId || 'music_v1 (server default)',
+    model_id: opts.modelId,
   };
   if (opts.forceInstrumental) record.force_instrumental = true;
-  if (opts.seed !== undefined) record.seed = opts.seed;
   if (flags.historyId) record.history_id = flags.historyId;
   if (flags.historyParent) record.parent_id = flags.historyParent;
   if (result && result.requestId) record.request_id = result.requestId;
@@ -944,7 +936,9 @@ async function runMusic(parsed, deps = {}) {
 
 const VOICE_ID_RE = /^[A-Za-z0-9]{20}$/;
 const VOICE_TEXT_MAX_LEN = 40000;
-const VOICE_DEFAULT_MODEL_ID = 'eleven_multilingual_v2';
+const VOICE_DEFAULT_MODEL_ID = 'eleven_v4';
+// eleven_v4 has no style or speed settings; the API accepts and ignores them.
+const VOICE_NO_STYLE_SPEED_RE = /^eleven_v4/;
 const VOICE_DEFAULT_OUTPUT_FORMAT = 'mp3_44100_128';
 
 // Voice accepts any of the standard audio output-format families, including WAV.
@@ -1242,6 +1236,13 @@ async function runTTS(parsed, deps = {}) {
 
   if (opts.shadowWarning) {
     stderr.write(`${opts.shadowWarning}\n`);
+  }
+  const ignored = ['style', 'speed'].filter((k) => opts.voiceSettings && k in opts.voiceSettings);
+  if (ignored.length > 0 && VOICE_NO_STYLE_SPEED_RE.test(opts.modelId)) {
+    stderr.write(
+      `audiogen: ${opts.modelId} ignores ${ignored.map((k) => `--${k}`).join(' and ')}. ` +
+        'Use audio tags like [whispering] in the text, or --model-id eleven_multilingual_v2.\n'
+    );
   }
 
   const { url, body } = buildVoiceRequest(opts);

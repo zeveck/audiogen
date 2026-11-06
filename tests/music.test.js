@@ -158,7 +158,6 @@ describe('validateMusicOptions', () => {
     const parsed = parseArgs([
       'music', 'epic', 'theme',
       '--length-ms', '45000',
-      '--seed', '42',
       '--force-instrumental',
       '--output-format', 'pcm_44100',
     ]);
@@ -166,7 +165,6 @@ describe('validateMusicOptions', () => {
       const opts = validateMusicOptions(parsed);
       assert.equal(opts.prompt, 'epic theme');
       assert.equal(opts.musicLengthMs, 45000);
-      assert.equal(opts.seed, 42);
       assert.equal(opts.forceInstrumental, true);
       assert.equal(opts.outputFormat, 'pcm_44100');
     });
@@ -245,41 +243,50 @@ describe('validateMusicOptions', () => {
     assert.ok(r.stderr.includes('non-empty prompt'), `stderr=${r.stderr}`);
   });
 
-  it('--seed non-numeric fails', async () => {
-    const parsed = parseArgs(['music', 'x', '--seed', 'not-a-number']);
+  it('--seed is refused (ElevenLabs rejects a seed with a prompt)', async () => {
+    const parsed = parseArgs(['music', 'x', '--seed', '7']);
     const r = await runCatching(() => validateMusicOptions(parsed));
     assert.equal(r.exitCode, 1);
-    assert.ok(r.stderr.includes('--seed must be an integer'), `stderr=${r.stderr}`);
+    assert.ok(r.stderr.includes('--seed does not work for music'), `stderr=${r.stderr}`);
+  });
+
+  it('model defaults to music_v2_5; --model-id overrides', async () => {
+    const r = await runCatching(() => {
+      assert.equal(validateMusicOptions(parseArgs(['music', 'x'])).modelId, 'music_v2_5');
+      assert.equal(validateMusicOptions(parseArgs(['music', 'x', '--model-id', 'music_v2'])).modelId, 'music_v2');
+    });
+    assert.equal(r.exitCode, null, `stderr=${r.stderr}`);
   });
 });
 
 describe('buildMusicRequest', () => {
-  it('default body: prompt + music_length_ms only', () => {
+  it('default body: prompt + music_length_ms + model_id only', () => {
     const { url, body } = buildMusicRequest({
       prompt: 'test',
       outputFormat: 'mp3_44100_128',
       musicLengthMs: 30000,
       forceInstrumental: false,
+      modelId: 'music_v2_5',
     });
     assert.equal(url, 'https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128');
-    assert.deepEqual(body, { prompt: 'test', music_length_ms: 30000 });
+    assert.deepEqual(body, { prompt: 'test', music_length_ms: 30000, model_id: 'music_v2_5' });
     assert.ok(!('force_instrumental' in body));
     assert.ok(!('seed' in body));
   });
 
-  it('with force_instrumental and seed', () => {
+  it('with force_instrumental', () => {
     const { body } = buildMusicRequest({
       prompt: 'instrumental',
       outputFormat: 'mp3_44100_128',
       musicLengthMs: 15000,
       forceInstrumental: true,
-      seed: 42,
+      modelId: 'music_v2_5',
     });
     assert.deepEqual(body, {
       prompt: 'instrumental',
       music_length_ms: 15000,
+      model_id: 'music_v2_5',
       force_instrumental: true,
-      seed: 42,
     });
   });
 
@@ -315,7 +322,6 @@ describe('runMusic dry-run', () => {
     const parsed = parseArgs([
       'music', 'chiptune', 'boss', 'battle',
       '--length-ms', '15000',
-      '--seed', '7',
       '--dry-run',
     ]);
     const fetchSpy = fetchScript([]); // must never be called
@@ -334,7 +340,7 @@ describe('runMusic dry-run', () => {
       `stdout=${stdout.buf}`
     );
     assert.ok(stdout.buf.includes('"music_length_ms":15000'));
-    assert.ok(stdout.buf.includes('"seed":7'));
+    assert.ok(stdout.buf.includes('"model_id":"music_v2_5"'));
     assert.ok(stdout.buf.includes('output: '));
     assert.ok(
       stdout.buf.includes(path.join('assets', 'audio', 'music', 'chiptune-boss-battle.mp3')),
@@ -434,7 +440,7 @@ describe('runMusic live (stubbed fetch)', () => {
     assert.equal(call.init.headers['xi-api-key'], 'test-key');
     assert.equal(call.init.headers['content-type'], 'application/json');
     const sent = JSON.parse(call.init.body);
-    assert.deepEqual(sent, { prompt: 'epic theme', music_length_ms: 30000 });
+    assert.deepEqual(sent, { prompt: 'epic theme', music_length_ms: 30000, model_id: 'music_v2_5' });
   });
 
   it('200 + 0-byte body: file deleted, fails with empty-response message', async () => {
@@ -632,8 +638,6 @@ describe('music CLI integration', () => {
           'chiptune boss battle',
           '--length-ms',
           '15000',
-          '--seed',
-          '7',
           '--dry-run',
         ],
         { encoding: 'utf8', timeout: 5000, cwd: tmp }
@@ -645,7 +649,7 @@ describe('music CLI integration', () => {
       );
       assert.ok(out.includes('"prompt":"chiptune boss battle"'));
       assert.ok(out.includes('"music_length_ms":15000'));
-      assert.ok(out.includes('"seed":7'));
+      assert.ok(out.includes('"model_id":"music_v2_5"'));
       assert.ok(out.includes(path.join('assets', 'audio', 'music', 'chiptune-boss-battle.mp3')));
       // No assets dir created on dry-run
       assert.ok(!fs.existsSync(path.join(tmp, 'assets')));

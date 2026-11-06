@@ -37,9 +37,8 @@ scene (stingers are short, exploration loops are long).
   trading melodies, triangle-wave bass, noise-channel snare, heroic
   yet menacing, minor key`
 - **Typical length_ms:** 30000 – 60000 (short loop)
-- **Notes:** Use `--force-instrumental`. Try `--seed` for
-  reproducibility once you find a take you like. Pair with `--loop`
-  in-engine (music has no native loop flag).
+- **Notes:** Use `--force-instrumental`. Loop it in-engine (music has
+  no native loop flag).
 
 ### 2. Chiptune Overworld (SNES)
 
@@ -219,13 +218,21 @@ Voice settings quick reference:
 - `--style` (0–1) — higher = more stylistic exaggeration.
 - `--speed` (0.5–2) — playback speed; 1.0 is default.
 
+`eleven_v4`, the default, ignores `--style` and `--speed`. The presets
+below list them for `--model-id eleven_multilingual_v2`; on `eleven_v4`
+drop them and put the delivery in audio tags instead (for example
+`[gruffly]`, `[whispering]`, `[slowly]`).
+
 Model quick reference:
 
-- `eleven_multilingual_v2` — default, rich, good general choice.
-- `eleven_v3` — most expressive, best for emotional / dramatic
-  lines.
+- `eleven_v4` — default. Most expressive; direct it with audio tags
+  (`[whispering]`, `[shouting]`, `[laughing]`) in the text. Ignores
+  `--style` and `--speed`.
+- `eleven_multilingual_v2` — very steady on long narration; supports
+  `--style` and `--speed`.
+- `eleven_v3` — the previous expressive model; `eleven_v4` replaces it.
 - `eleven_flash_v2_5` — fastest, cheapest, lower fidelity.
-- `eleven_turbo_v2_5` — mid-latency, mid-fidelity.
+  (`eleven_turbo_v2_5` is deprecated; use Flash.)
 
 ### 1. Gruff Guard Captain
 
@@ -246,7 +253,7 @@ Model quick reference:
   slight wavering, British theatrical.
 - **Settings:** `--stability 0.7 --similarity-boost 0.7 --style 0.3
   --speed 0.95`
-- **Model:** `eleven_v3` (for incantations) or `eleven_multilingual_v2`
+- **Model:** `eleven_v4` (the default)
 - **Typical lines:** "Ah, young one… you stand at the crossroads of
   fate."
 
@@ -258,7 +265,7 @@ Model quick reference:
   delivery, frequent smirk, slight upward lilt.
 - **Settings:** `--stability 0.35 --similarity-boost 0.65 --style
   0.6`
-- **Model:** `eleven_v3`
+- **Model:** `eleven_v4` (the default)
 - **Typical lines:** "Oh *now* you need my help? Interesting…"
 
 ### 4. Stoic Warrior
@@ -300,7 +307,7 @@ Model quick reference:
   delivery, hint of smirk.
 - **Settings:** `--stability 0.55 --similarity-boost 0.8 --style 0.6
   --speed 0.92`
-- **Model:** `eleven_v3` (villains need expressiveness)
+- **Model:** `eleven_v4` (the default; villains need expressiveness)
 - **Typical lines:** "You truly believed you could stop me? How…
   *charming*."
 
@@ -311,9 +318,9 @@ Model quick reference:
 - **Voice profile:** high-pitched, 8–12 years old, breathy when
   scared.
 - **Settings:** `--stability 0.3 --similarity-boost 0.7 --style 0.5`
-- **Model:** `eleven_v3`
+- **Model:** `eleven_v4` (the default)
 - **Typical lines:** "Is… is it gone? Please say it's gone."
-- **Notes:** Be mindful — high emotion benefits from `eleven_v3`.
+- **Notes:** Be mindful — high emotion benefits from `eleven_v4` and audio tags.
 
 ### 9. Rugged Ranger
 
@@ -354,7 +361,7 @@ Model quick reference:
   reverberant. Consider engine-side pitch-shift / reverb as well.
 - **Settings:** `--stability 0.85 --similarity-boost 0.75 --style 0.5
   --speed 0.85`
-- **Model:** `eleven_v3`
+- **Model:** `eleven_v4` (the default)
 - **Typical lines:** "I have waited… eons… for this moment."
 
 ### 13. Narrator / Storyteller
@@ -386,7 +393,7 @@ Model quick reference:
   excitement and muttering, slight stutter on consonants.
 - **Settings:** `--stability 0.35 --similarity-boost 0.65 --style
   0.65 --speed 1.1`
-- **Model:** `eleven_v3`
+- **Model:** `eleven_v4` (the default)
 - **Typical lines:** "YES! No — wait — YES! That's it! Brass
   couplings, of *course*!"
 
@@ -561,8 +568,8 @@ lag changes.
 | Modality | Rate | Notes |
 | -------- | ---- | ----- |
 | Music | ~$0.30 / minute of output | Pay per minute of generated audio. |
-| TTS — Flash / Turbo (`eleven_flash_v2_5`, `eleven_turbo_v2_5`) | ~$0.05 / 1,000 characters | Fast and cheap; lower fidelity. |
-| TTS — Multilingual v2 / v3 (`eleven_multilingual_v2`, `eleven_v3`) | ~$0.10 / 1,000 characters | Default / expressive. |
+| TTS — Flash (`eleven_flash_v2_5`) | ~$0.05 / 1,000 characters | Fast and cheap; lower fidelity. |
+| TTS — v4 / Multilingual v2 / v3 (`eleven_v4`, `eleven_multilingual_v2`, `eleven_v3`) | ~$0.10 / 1,000 characters | `eleven_v4` is the default. |
 | SFX | ~$0.12 / generation | Flat rate — 1 s and 30 s cost the same. |
 
 ### Free-tier quota

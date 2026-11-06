@@ -144,7 +144,7 @@ When you know what you want, drive it directly:
 
 ```
 /audiogen music chiptune boss battle --length-ms 20000 --force-instrumental
-/audiogen voice "Welcome, hero." --voice-id George --style 0.4
+/audiogen voice "[warmly] Welcome, hero." --voice-id George
 /audiogen sfx heavy iron portcullis slam --duration 2
 /audiogen voices --accent british --gender female
 ```
@@ -160,7 +160,7 @@ node .claude/skills/audiogen/generate.cjs music \
   --length-ms 30000 --force-instrumental
 
 node .claude/skills/audiogen/generate.cjs voice \
-  "Welcome, traveler." --voice-id George --speed 1.05
+  "[whispering] Welcome, traveler." --voice-id George --stability 0.4
 
 node .claude/skills/audiogen/generate.cjs sfx \
   "heavy iron portcullis slam, long reverb" --duration 2
@@ -181,8 +181,8 @@ default. Use `--output <path>` to redirect.
 
 | Subcommand | Endpoint | Output |
 |---|---|---|
-| `music` | `POST /v1/music` | 3 s–5 min tracks; genre/tempo/mood from prompt |
-| `voice` | `POST /v1/text-to-speech/{voice_id}` | TTS, 40K-char input cap, `eleven_multilingual_v2` default |
+| `music` | `POST /v1/music` | 3 s–5 min tracks; genre/tempo/mood from prompt; `music_v2_5` |
+| `voice` | `POST /v1/text-to-speech/{voice_id}` | TTS, 40K-char input cap, `eleven_v4` default |
 | `sfx` | `POST /v1/sound-generation` | 0.5–30 s effects; `--loop` for seamless game ambience |
 | `voices` | `GET /v2/voices` | Browse/filter catalog; cached 24 h to `.audiogen-voices.json` |
 | `plan` | `GET /v1/user/subscription` | Which ElevenLabs plan the key is on, and whether audio must credit ElevenLabs |

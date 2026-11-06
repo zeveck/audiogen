@@ -713,7 +713,7 @@ describe('voice CLI integration', () => {
         `out=${out}`
       );
       assert.ok(
-        out.includes('body: {"text":"Halt!","model_id":"eleven_multilingual_v2"}'),
+        out.includes('body: {"text":"Halt!","model_id":"eleven_v4"}'),
         `out=${out}`
       );
       // No history or assets created on dry-run.

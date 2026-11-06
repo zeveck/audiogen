@@ -81,14 +81,15 @@ When the phrasing is ambiguous (e.g. "a scream" — voice or sfx?), ask.
 
 ### `music` — background tracks
 
-    /audiogen music <prompt...> [--length-ms MS] [--seed N]
+    /audiogen music <prompt...> [--length-ms MS]
                                 [--force-instrumental]
                                 [--output-format FMT] [--output PATH]
 
-Generates one music clip via `POST /v1/music`.
+Generates one music clip via `POST /v1/music` with `music_v2_5`
+(ElevenLabs' newest music model; `--model-id` overrides).
 
 - `--length-ms` — 3000–600000. Default `30000` (30 s). Max 5 minutes.
-- `--seed` — integer seed for reproducibility.
+- No `--seed`: ElevenLabs refuses a seed with a text prompt.
 - `--force-instrumental` — suppress vocals.
 - `--output-format` — `mp3_*`, `pcm_*`, `opus_*`, `ulaw_8000`,
   `alaw_8000`. Default `mp3_44100_128`. **WAV formats (`wav_*`) are
@@ -114,11 +115,18 @@ Generates one TTS clip via `POST /v1/text-to-speech/{voice_id}`.
   ID. If the name isn't cached, fall back to `audiogen voices <query>`
   to discover one.
 - Input cap: **40,000 characters** (enforced client-side).
-- `--model-id` — default `eleven_multilingual_v2`. Others:
-  `eleven_flash_v2_5` (fast/cheap), `eleven_turbo_v2_5`, `eleven_v3`
-  (expressive — best for emotional lines).
+- `--model-id` — default `eleven_v4`, ElevenLabs' most expressive model
+  and the best fit for game characters. Direct its delivery with audio
+  tags in the text: `"[whispering] They're coming."`, `[shouting]`,
+  `[laughing]`, `[sighs]`. Others: `eleven_multilingual_v2` (very steady
+  on long narration; supports `--style` and `--speed`),
+  `eleven_flash_v2_5` (half the price, fast, less expressive). Library
+  and premade voices all work with v4; a custom voice cloned before v4
+  may need retraining in ElevenLabs.
 - `--stability`, `--similarity-boost`, `--style`, `--speed` — all
   optional `voice_settings` fields. Ranges 0–1 except `--speed` (0.5–2).
+  `eleven_v4` ignores `--style` and `--speed` (audiogen warns); lower
+  `--stability` gives more emotional range, higher more consistent takes.
 - `--output-format` — includes `wav_*` in addition to the usual set
   (WAV is supported for TTS but not for music or sfx).
 

@@ -7,6 +7,23 @@ so on (`v2026.10.11.2`).
 The running version is shown by `--help` and `--version`, and recorded as
 `audiogenVersion` in every `.audiogen-history.jsonl` entry.
 
+## v2026.11.6
+
+Model updates (checked against ElevenLabs' docs and live on 2026-11-06):
+
+- Music now always asks for `music_v2_5`, ElevenLabs' newest music model.
+  Before, audiogen sent no model, so ElevenLabs used `music_v1`, which it
+  removes on 2027-01-31. `--model-id` still overrides it.
+- Music `--seed` is gone. ElevenLabs refuses a seed with a text prompt
+  ("`seed` cannot be used with `prompt`") on every music model, so it already
+  failed; now audiogen says so before calling the API.
+- Voice defaults to `eleven_v4`, ElevenLabs' most expressive model, instead
+  of `eleven_multilingual_v2`. Direct delivery with audio tags such as
+  `[whispering]` or `[shouting]`. v4 ignores `--style` and `--speed`; audiogen
+  now warns when they're passed with it. `--model-id eleven_multilingual_v2`
+  keeps the old voice.
+- Docs: `eleven_turbo_v2_5` is deprecated (use `eleven_flash_v2_5`).
+
 ## v2026.11.1.4
 
 Fix from a third bug review ([#3](https://github.com/zeveck/audiogen/issues/3)):
